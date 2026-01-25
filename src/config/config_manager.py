@@ -161,6 +161,9 @@ class ConfigManager:
     def get_csv_path(self) -> Path:
         """Get CSV output file path"""
         csv_path = self.get('output.csv.file_path', 'output/signals.csv')
+
+        # Expand environment variables (e.g., %TEMP% on Windows)
+        csv_path = os.path.expandvars(csv_path)
         path = Path(csv_path)
 
         # Make absolute if relative
@@ -175,6 +178,9 @@ class ConfigManager:
     def get_error_log_path(self) -> Path:
         """Get error log file path"""
         log_path = self.get('output.error_log.file_path', 'logs/extraction_errors.jsonl')
+
+        # Expand environment variables (e.g., %TEMP% on Windows)
+        log_path = os.path.expandvars(log_path)
         path = Path(log_path)
 
         # Make absolute if relative

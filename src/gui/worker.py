@@ -8,6 +8,8 @@ from src.telegram.client import TelegramListener
 from src.extraction.extractor import SignalExtractor
 from src.storage.csv_writer import CSVWriter
 from src.storage.error_logger import ErrorLogger
+from src.server.signal_store import SignalStore
+from src.server.signal_server import SignalServer
 
 
 class BackgroundWorker(QThread):
@@ -40,6 +42,8 @@ class BackgroundWorker(QThread):
         self.signal_extractor = None
         self.csv_writer = None
         self.error_logger = None
+        self.signal_store = None
+        self.signal_server = None
 
     def run(self):
         """Run the worker thread"""
@@ -105,6 +109,10 @@ class BackgroundWorker(QThread):
             self.status_changed.emit("error")
         finally:
             # Cleanup
+            if self.signal_server:
+                self.signal_server.stop()
+                self.log_message.emit("Signal server stopped", "info")
+
             if self.telegram_client:
                 await self.telegram_client.disconnect()
 
@@ -138,6 +146,26 @@ class BackgroundWorker(QThread):
         )
         self.logger.info("Telegram client initialized")
 
+        # Signal store and HTTP server for MT5 EA integration
+        persistence_path = str(self.config.project_root / 'data' / 'signal_store.json')
+        server_port = self.config.get('server.port', 4726)
+
+        self.signal_store = SignalStore(
+            persistence_path=persistence_path,
+            max_age_hours=24
+        )
+        self.logger.info("Signal store initialized")
+
+        self.signal_server = SignalServer(
+            signal_store=self.signal_store,
+            host="0.0.0.0",
+            port=server_port
+        )
+        # Start server
+        self.signal_server.start()
+        self.log_message.emit(f"Signal server started on port {server_port}", "success")
+        self.logger.info(f"Signal server started on http://0.0.0.0:{server_port}")
+
     async def on_new_message(self, message, chat):
         """Handle new message from Telegram"""
         try:
@@ -157,20 +185,21 @@ class BackgroundWorker(QThread):
             if self.signal_extractor.is_signal(message_text):
                 self.log_message.emit(f"Processing potential signal from @{channel_username}", "info")
 
-                # Extract signal
-                signal = self.signal_extractor.extract_signal(
-                    message_text,
-                    message_id,
-                    channel_username,
-                    timestamp
-                )
+                try:
+                    # Extract signal (may raise ValueError for low confidence)
+                    signal = self.signal_extractor.extract_signal(
+                        message_text,
+                        message_id,
+                        channel_username,
+                        timestamp
+                    )
 
-                # Get confidence threshold
-                min_confidence = self.config.get_min_confidence()
-
-                if signal and signal.confidence_score >= min_confidence:
                     # Valid signal - save it
                     self.csv_writer.write_signal(signal)
+
+                    # Add to signal store for MT5 EA
+                    if self.signal_store.add_signal(signal):
+                        self.logger.info(f"  Signal added to MT5 store (pending)")
 
                     self.stats['extracted'] += 1
 
@@ -198,23 +227,12 @@ class BackgroundWorker(QThread):
                         "success"
                     )
 
-                else:
-                    # Low confidence or invalid
-                    self.stats['errors'] += 1
-
-                    error_reason = "Low confidence" if signal else "Extraction failed"
-                    self.error_logger.log_extraction_error(
-                        message_text,
-                        message_id,
-                        channel_username,
-                        timestamp,
-                        error_reason,
-                        signal.confidence_score if signal else 0.0
-                    )
-
-                    self.error_occurred.emit(
-                        f"Failed to extract signal from @{channel_username}: {error_reason}",
-                        "warning"
+                except ValueError as e:
+                    # Low confidence or extraction failed - this is expected, not an error
+                    self.logger.debug(f"Message skipped: {e}")
+                    self.log_message.emit(
+                        f"Skipped message from @{channel_username}: {e}",
+                        "info"
                     )
 
         except Exception as e:

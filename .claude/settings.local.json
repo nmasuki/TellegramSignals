@@ -6,7 +6,21 @@
       "Bash(python:*)",
       "Bash(pip install:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(du:*)",
+      "Bash(git rm:*)",
+      "Bash(xargs du:*)",
+      "Bash(ssh:*)",
+      "Bash(venvScriptspip.exe install Pillow)",
+      "Bash(cmd.exe /c \"cd /d c:\\\\Projects\\\\nmasuki\\\\TelegramSignals && venv\\\\Scripts\\\\pip.exe install Pillow\")",
+      "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\" -m pip install Pillow)",
+      "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\":*)",
+      "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\" \"c:/Projects/nmasuki/TelegramSignals/scripts/build_exe.py\")"
     ]
   }
 }

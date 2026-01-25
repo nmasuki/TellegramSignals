@@ -1,4 +1,5 @@
 """System tray icon and menu"""
+from pathlib import Path
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt, Signal
@@ -17,6 +18,9 @@ class SystemTrayIcon(QSystemTrayIcon):
         self.parent_window = parent
         self.monitoring_enabled = False
 
+        # Load app icon
+        self._load_app_icon()
+
         # Set initial icon
         self.set_icon_color('gray')
 
@@ -25,6 +29,15 @@ class SystemTrayIcon(QSystemTrayIcon):
 
         # Connect activation
         self.activated.connect(self.on_activated)
+
+    def _load_app_icon(self):
+        """Load the application icon from resources"""
+        icon_path = Path(__file__).parent / "resources" / "icons" / "tray.png"
+        if icon_path.exists():
+            self._base_icon = QPixmap(str(icon_path))
+        else:
+            # Fallback: create a simple icon
+            self._base_icon = None
 
     def setup_menu(self):
         """Create context menu"""
@@ -90,15 +103,8 @@ class SystemTrayIcon(QSystemTrayIcon):
         self.setContextMenu(menu)
 
     def set_icon_color(self, color: str):
-        """Set tray icon color based on status"""
-        # Create a colored circle icon
-        pixmap = QPixmap(32, 32)
-        pixmap.fill(Qt.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # Color mapping
+        """Set tray icon with status indicator overlay"""
+        # Color mapping for status indicator
         color_map = {
             'green': QColor(76, 175, 80),      # Connected
             'yellow': QColor(255, 193, 7),     # Warning
@@ -106,15 +112,49 @@ class SystemTrayIcon(QSystemTrayIcon):
             'gray': QColor(158, 158, 158)      # Stopped
         }
 
-        # Draw circle
-        painter.setBrush(color_map.get(color, QColor(158, 158, 158)))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(4, 4, 24, 24)
+        size = 32
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
 
-        # Draw border
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QColor(255, 255, 255, 100))
-        painter.drawEllipse(4, 4, 24, 24)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Draw the base app icon if available
+        if self._base_icon:
+            scaled_icon = self._base_icon.scaled(
+                size, size,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            painter.drawPixmap(0, 0, scaled_icon)
+        else:
+            # Fallback: draw a simple golden diamond
+            painter.setBrush(QColor(218, 165, 32))
+            painter.setPen(Qt.NoPen)
+            points = [
+                (size // 2, 4),
+                (size - 4, size // 2),
+                (size // 2, size - 4),
+                (4, size // 2)
+            ]
+            from PySide6.QtGui import QPolygon
+            from PySide6.QtCore import QPoint
+            polygon = QPolygon([QPoint(x, y) for x, y in points])
+            painter.drawPolygon(polygon)
+
+        # Draw status indicator dot in bottom-right corner
+        indicator_size = 10
+        indicator_x = size - indicator_size - 1
+        indicator_y = size - indicator_size - 1
+
+        # Draw indicator background (dark border)
+        painter.setBrush(QColor(0, 0, 0))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(indicator_x - 1, indicator_y - 1, indicator_size + 2, indicator_size + 2)
+
+        # Draw colored indicator
+        painter.setBrush(color_map.get(color, QColor(158, 158, 158)))
+        painter.drawEllipse(indicator_x, indicator_y, indicator_size, indicator_size)
 
         painter.end()
 

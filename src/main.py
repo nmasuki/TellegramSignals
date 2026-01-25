@@ -14,6 +14,8 @@ from src.telegram.client import TelegramListener
 from src.extraction.extractor import SignalExtractor
 from src.storage.csv_writer import CSVWriter
 from src.storage.error_logger import ErrorLogger
+from src.server.signal_store import SignalStore
+from src.server.signal_server import SignalServer
 
 
 # Global flag for graceful shutdown
@@ -88,6 +90,21 @@ class SignalExtractorApp:
             encoding=self.config.get('output.error_log.encoding', 'utf-8')
         )
 
+        # Initialize HTTP server for MT5 EA integration
+        server_config = self.config.get('server', {})
+        persistence_path = str(self.config.project_root / 'data' / 'signal_store.json')
+
+        self.signal_store = SignalStore(
+            persistence_path=persistence_path,
+            max_age_hours=server_config.get('max_signal_age_hours', 24)
+        )
+
+        self.signal_server = SignalServer(
+            signal_store=self.signal_store,
+            host=server_config.get('host', '0.0.0.0'),
+            port=server_config.get('port', 4726)  # GRAM in leetspeak
+        )
+
         self.logger.info("Components initialized successfully")
 
     async def on_new_message(self, message, chat):
@@ -125,6 +142,10 @@ class SignalExtractorApp:
 
                 # Write to CSV
                 self.csv_writer.write_signal(signal)
+
+                # Add to signal store for MT5 EA
+                if self.signal_store.add_signal(signal):
+                    self.logger.info(f"  Signal added to MT5 store (pending)")
 
                 self.stats['signals_extracted'] += 1
 
@@ -188,6 +209,9 @@ class SignalExtractorApp:
             # Start monitoring
             await self.telegram_client.start_monitoring()
 
+            # Start HTTP server for MT5 EA
+            self.signal_server.start()
+
             # Print startup info
             self.print_status()
 
@@ -210,6 +234,10 @@ class SignalExtractorApp:
         """Cleanup resources"""
         self.logger.info("Cleaning up...")
 
+        # Stop HTTP server
+        if hasattr(self, 'signal_server'):
+            self.signal_server.stop()
+
         try:
             await self.telegram_client.disconnect()
         except:
@@ -223,6 +251,7 @@ class SignalExtractorApp:
         channels = self.telegram_client.channels
         csv_count = self.csv_writer.get_signal_count()
         error_count = self.error_logger.get_error_count()
+        store_stats = self.signal_store.get_stats()
 
         print("\n" + "=" * 60)
         print("TELEGRAM SIGNAL EXTRACTOR - RUNNING")
@@ -233,6 +262,10 @@ class SignalExtractorApp:
         print(f"\nSignals in CSV: {csv_count}")
         print(f"Extraction errors logged: {error_count}")
         print(f"Min confidence threshold: {self.config.get_min_confidence()}")
+        print(f"\nMT5 Signal Server:")
+        print(f"  URL: http://localhost:4726/signals")
+        print(f"  Pending signals: {store_stats['pending']}")
+        print(f"  Acknowledged: {store_stats['acknowledged']}")
         print("\nPress Ctrl+C to stop")
         print("=" * 60 + "\n")
 
