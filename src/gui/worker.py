@@ -225,10 +225,10 @@ class BackgroundWorker(QThread):
                         'entry_price_min': signal.entry_price_min,
                         'entry_price_max': signal.entry_price_max,
                         'stop_loss': signal.stop_loss,
-                        'take_profit_1': signal.take_profit_1,
-                        'take_profit_2': signal.take_profit_2,
-                        'take_profit_3': signal.take_profit_3,
-                        'take_profit_4': signal.take_profit_4,
+                        'take_profit_1': signal.take_profits[0] if len(signal.take_profits) > 0 else None,
+                        'take_profit_2': signal.take_profits[1] if len(signal.take_profits) > 1 else None,
+                        'take_profit_3': signal.take_profits[2] if len(signal.take_profits) > 2 else None,
+                        'take_profit_4': signal.take_profits[3] if len(signal.take_profits) > 3 else None,
                         'confidence_score': signal.confidence_score
                     }
 

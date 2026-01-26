@@ -20,7 +20,9 @@
       "Bash(cmd.exe /c \"cd /d c:\\\\Projects\\\\nmasuki\\\\TelegramSignals && venv\\\\Scripts\\\\pip.exe install Pillow\")",
       "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\" -m pip install Pillow)",
       "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\":*)",
-      "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\" \"c:/Projects/nmasuki/TelegramSignals/scripts/build_exe.py\")"
+      "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\" \"c:/Projects/nmasuki/TelegramSignals/scripts/build_exe.py\")",
+      "Bash(netsh advfirewall firewall add rule name=\"MetaTrader5 - Inbound\" dir=in action=allow program=\"C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe\" enable=yes)",
+      "Bash(netsh advfirewall firewall add rule name=\"MetaTrader5 - Outbound\" dir=out action=allow program=\"C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe\" enable=yes)"
     ]
   }
 }
