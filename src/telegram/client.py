@@ -39,12 +39,14 @@ class TelegramListener:
         self.channels: List[str] = []
         self._message_handlers: List[Callable] = []
 
-    async def authenticate(self, phone: Optional[str] = None):
+    async def authenticate(self, phone: Optional[str] = None, code_callback=None, password_callback=None):
         """
         Authenticate with Telegram
 
         Args:
             phone: Phone number (with country code, e.g., +1234567890)
+            code_callback: Optional async function that returns the verification code (for GUI)
+            password_callback: Optional async function that returns the 2FA password (for GUI)
 
         Raises:
             ValueError: If phone number is required but not provided
@@ -61,7 +63,14 @@ class TelegramListener:
             await self.client.send_code_request(phone)
 
             # Get code from user
-            code = input("Enter the code you received: ")
+            if code_callback:
+                code = await code_callback()
+            else:
+                # Fallback to console input (only works in console mode)
+                try:
+                    code = input("Enter the code you received: ")
+                except (EOFError, OSError):
+                    raise RuntimeError("Cannot read verification code - no console available")
 
             try:
                 # Sign in with code
@@ -69,8 +78,14 @@ class TelegramListener:
                 logger.info("Successfully authenticated!")
 
             except SessionPasswordNeededError:
-                logger.error("2FA is enabled. Please disable 2FA or implement 2FA support.")
-                raise
+                # 2FA is enabled
+                if password_callback:
+                    password = await password_callback()
+                    await self.client.sign_in(password=password)
+                    logger.info("Successfully authenticated with 2FA!")
+                else:
+                    logger.error("2FA is enabled but no password callback provided")
+                    raise
 
         else:
             logger.info("Already authorized, using existing session")
@@ -79,12 +94,14 @@ class TelegramListener:
         me: User = await self.client.get_me()
         logger.info(f"Logged in as: {me.first_name} ({me.phone})")
 
-    async def connect(self, phone: Optional[str] = None):
+    async def connect(self, phone: Optional[str] = None, code_callback=None, password_callback=None):
         """
         Connect to Telegram
 
         Args:
             phone: Phone number for authentication if needed
+            code_callback: Optional async function that returns verification code
+            password_callback: Optional async function that returns 2FA password
 
         Raises:
             ConnectionError: If connection fails
@@ -94,7 +111,7 @@ class TelegramListener:
             await self.client.connect()
 
             # Authenticate if needed
-            await self.authenticate(phone)
+            await self.authenticate(phone, code_callback, password_callback)
 
             self.connected = True
             logger.info("Successfully connected to Telegram")

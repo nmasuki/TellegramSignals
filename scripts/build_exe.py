@@ -26,8 +26,14 @@ def main():
     # Clean previous builds
     print("\n[1/4] Cleaning previous builds...")
     if dist_dir.exists():
-        shutil.rmtree(dist_dir)
-        print(f"  Removed: {dist_dir}")
+        try:
+            shutil.rmtree(dist_dir)
+            print(f"  Removed: {dist_dir}")
+        except PermissionError as e:
+            print(f"  Warning: Could not remove {dist_dir}")
+            print(f"  {e}")
+            print(f"  Please close the application and try again.")
+            return 1
     if build_dir.exists():
         shutil.rmtree(build_dir)
         print(f"  Removed: {build_dir}")
@@ -76,17 +82,21 @@ def main():
 
 ## First Time Setup
 
-1. Copy `.env.example` to `.env` in the `config` folder
-2. Edit `.env` with your Telegram API credentials:
-   - Get API ID and Hash from https://my.telegram.org
-   - Add your phone number
+1. Create a `.env` file in the `config` folder with your Telegram credentials:
 
-3. Edit `config.yaml` to configure:
-   - Channels to monitor
-   - Output settings
-   - Extraction parameters
+   TELEGRAM_API_ID=your_api_id_here
+   TELEGRAM_API_HASH=your_api_hash_here
+   TELEGRAM_PHONE=+1234567890
 
-4. Run `TelegramSignals.exe`
+   Get API credentials from: https://my.telegram.org
+   (Go to "API development tools" and create an app)
+
+2. (Optional) Edit `config/config.yaml` to add channels to monitor.
+   You can also use the Settings dialog in the app.
+
+3. Run `TelegramSignals.exe`
+
+4. On first run, log in to Telegram when prompted (enter verification code)
 
 ## Folders
 
@@ -94,11 +104,20 @@ def main():
 - `output/` - Extracted signals CSV files
 - `logs/` - Application logs
 - `data/` - Signal store for MT5 integration
-- `sessions/` - Telegram session files (keep private!)
+- `sessions/` - Telegram session files (KEEP PRIVATE!)
 
-## Note
+## Important Notes
 
-Keep your `sessions/` folder private - it contains your Telegram login!
+- Keep your `sessions/` folder private - it contains your Telegram login
+- The app will create config.yaml automatically if it doesn't exist
+- You can use environment variables in .env to configure everything
+- Default signal server runs on http://localhost:4726/signals
+
+## Troubleshooting
+
+- If the app doesn't start, check that config/.env exists with valid credentials
+- If you get "No channels configured" error, add channels in config.yaml
+- Check logs/app.log for detailed error messages
 """
         (output_dir / "README.txt").write_text(readme_content)
         print("  Created: README.txt")

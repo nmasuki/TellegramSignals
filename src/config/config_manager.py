@@ -1,5 +1,6 @@
 """Configuration management for Telegram Signal Extractor"""
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import yaml
@@ -9,20 +10,35 @@ from dotenv import load_dotenv
 class ConfigManager:
     """Manages application configuration from files and environment variables"""
 
-    def __init__(self, config_path: Optional[str] = None, env_path: Optional[str] = None):
+    @staticmethod
+    def _get_base_path() -> Path:
+        """
+        Get the base path for config files
+        Works for both development and PyInstaller bundle
+        """
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            # Use the directory containing the executable
+            return Path(sys.executable).parent
+        else:
+            # Running in development
+            return Path(__file__).parent.parent.parent
+
+    def __init__(self, config_path: Optional[str] = None, env_path: Optional[str] = None, validate: bool = True):
         """
         Initialize configuration manager
 
         Args:
             config_path: Path to config.yaml file
             env_path: Path to .env file
+            validate: Whether to validate config (set False for GUI to handle gracefully)
         """
-        # Get project root
-        self.project_root = Path(__file__).parent.parent.parent
+        # Get project root (handle both development and PyInstaller bundle)
+        self.project_root = self._get_base_path()
 
         # Set config paths
         self.config_path = config_path or self.project_root / "config" / "config.yaml"
-        self.env_path = env_path or self.project_root / ".env"
+        self.env_path = env_path or self.project_root / "config" / ".env"
 
         # Load environment variables first (highest priority)
         load_dotenv(self.env_path)
@@ -30,22 +46,129 @@ class ConfigManager:
         # Load configuration
         self.config = self._load_config()
 
-        # Validate required fields
-        self._validate_config()
+        # Validate required fields (optional for GUI)
+        if validate:
+            self._validate_config()
 
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file with environment variable overrides"""
-        # Load YAML file
+        # Load YAML file or create default config
         if not Path(self.config_path).exists():
-            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+            # Create default configuration
+            config = self._get_default_config()
 
-        with open(self.config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+            # Try to save default config for future use
+            try:
+                self.config_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            except Exception:
+                # If we can't write, just use the default in memory
+                pass
+        else:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
 
         # Override with environment variables
         config = self._apply_env_overrides(config)
 
         return config
+
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration"""
+        return {
+            'telegram': {
+                'api_id': '',  # Will be set via environment variables
+                'api_hash': '',  # Will be set via environment variables
+                'phone': '',  # Will be set via environment variables
+                'session_name': 'telegram_signal_session',
+                'channels': [
+                    {
+                        'username': 'nickalphatrader',
+                        'enabled': True,
+                        'description': 'Nick Alpha Trader signals'
+                    },
+                    {
+                        'username': 'GaryGoldLegacy',
+                        'enabled': True,
+                        'description': 'Gary Gold Legacy signals'
+                    }
+                ]
+            },
+            'extraction': {
+                'min_confidence': 0.75,
+                'confidence_weights': {
+                    'symbol': 0.25,
+                    'direction': 0.25,
+                    'entry': 0.20,
+                    'stop_loss': 0.15,
+                    'take_profit': 0.15
+                },
+                'symbol_mapping': {
+                    'GOLD': 'XAUUSD',
+                    'Gold': 'XAUUSD',
+                    'XAU/USD': 'XAUUSD',
+                    'XAUUSD': 'XAUUSD',
+                    'EUR/USD': 'EURUSD',
+                    'EURUSD': 'EURUSD',
+                    'GBP/USD': 'GBPUSD',
+                    'GBPUSD': 'GBPUSD',
+                    'BTC/USD': 'BTCUSD',
+                    'BTCUSD': 'BTCUSD'
+                }
+            },
+            'output': {
+                'csv': {
+                    'file_path': '%APPDATA%\\MetaQuotes\\Terminal\\Common\\Files\\TelegramSignals\\signals.csv',
+                    'encoding': 'utf-8',
+                    'append_mode': True,
+                    'fields': [
+                        'message_id',
+                        'channel_username',
+                        'timestamp',
+                        'symbol',
+                        'direction',
+                        'entry_price',
+                        'entry_price_min',
+                        'entry_price_max',
+                        'stop_loss',
+                        'take_profit_1',
+                        'take_profit_2',
+                        'take_profit_3',
+                        'take_profit_4',
+                        'confidence_score',
+                        'raw_message',
+                        'extracted_at'
+                    ]
+                },
+                'error_log': {
+                    'file_path': 'logs/extraction_errors.jsonl',
+                    'max_bytes': 10485760,
+                    'backup_count': 5
+                }
+            },
+            'logging': {
+                'level': 'INFO',
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                'console': {
+                    'enabled': True,
+                    'level': 'INFO'
+                },
+                'file': {
+                    'enabled': True,
+                    'level': 'DEBUG',
+                    'file_path': 'logs/app.log',
+                    'max_bytes': 10485760,
+                    'backup_count': 5
+                }
+            },
+            'server': {
+                'enabled': True,
+                'host': '0.0.0.0',
+                'port': 4726,
+                'max_signal_age_hours': 24
+            }
+        }
 
     def _apply_env_overrides(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to config"""
@@ -115,6 +238,19 @@ class ConfigManager:
         channels = self.config.get('telegram', {}).get('channels', [])
         if not channels:
             raise ValueError("No channels configured. Add at least one channel to monitor.")
+
+    def is_valid(self) -> tuple[bool, str]:
+        """
+        Check if configuration is valid without raising exceptions
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            self._validate_config()
+            return True, ""
+        except ValueError as e:
+            return False, str(e)
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """

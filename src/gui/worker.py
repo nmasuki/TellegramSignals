@@ -1,7 +1,8 @@
 """Background worker thread for Telegram monitoring"""
 import asyncio
 import logging
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QEventLoop
+from PySide6.QtWidgets import QInputDialog
 from datetime import datetime
 
 from src.telegram.client import TelegramListener
@@ -22,6 +23,8 @@ class BackgroundWorker(QThread):
     message_received = Signal(str, str)  # Channel, message preview
     stats_updated = Signal(dict)  # Statistics dictionary
     log_message = Signal(str, str)  # Message, level (info/success/warning/error)
+    request_auth_code = Signal()  # Request auth code from user
+    request_2fa_password = Signal()  # Request 2FA password from user
 
     def __init__(self, config):
         super().__init__()
@@ -36,6 +39,11 @@ class BackgroundWorker(QThread):
             'errors': 0,
             'start_time': None
         }
+
+        # Authentication responses (set by GUI thread)
+        self._auth_code = None
+        self._auth_password = None
+        self._auth_event = asyncio.Event()
 
         # Components (initialized in thread)
         self.telegram_client = None
@@ -75,7 +83,11 @@ class BackgroundWorker(QThread):
             self.status_changed.emit("connecting")
 
             phone = self.config.get('telegram.phone')
-            await self.telegram_client.connect(phone=phone)
+            await self.telegram_client.connect(
+                phone=phone,
+                code_callback=self._get_auth_code,
+                password_callback=self._get_2fa_password
+            )
 
             self.status_changed.emit("connected")
             self.log_message.emit("Successfully connected to Telegram", "success")
@@ -272,3 +284,33 @@ class BackgroundWorker(QThread):
         """Stop the worker"""
         self.log_message.emit("Stopping background worker...", "info")
         self.running = False
+
+    def provide_auth_code(self, code: str):
+        """Provide auth code from GUI (called by main thread)"""
+        self._auth_code = code
+        self._auth_event.set()
+
+    def provide_2fa_password(self, password: str):
+        """Provide 2FA password from GUI (called by main thread)"""
+        self._auth_password = password
+        self._auth_event.set()
+
+    async def _get_auth_code(self):
+        """Request auth code from GUI and wait for response"""
+        self._auth_code = None
+        self._auth_event.clear()
+        self.request_auth_code.emit()
+
+        # Wait for GUI to provide the code
+        await self._auth_event.wait()
+        return self._auth_code
+
+    async def _get_2fa_password(self):
+        """Request 2FA password from GUI and wait for response"""
+        self._auth_password = None
+        self._auth_event.clear()
+        self.request_2fa_password.emit()
+
+        # Wait for GUI to provide the password
+        await self._auth_event.wait()
+        return self._auth_password

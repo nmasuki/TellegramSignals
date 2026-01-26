@@ -77,6 +77,8 @@ class AppController(QObject):
         self.worker.message_received.connect(self.on_message_received)
         self.worker.stats_updated.connect(self.on_stats_updated)
         self.worker.log_message.connect(self.on_log_message)
+        self.worker.request_auth_code.connect(self.on_request_auth_code)
+        self.worker.request_2fa_password.connect(self.on_request_2fa_password)
 
         # Start worker
         self.worker.start()
@@ -183,6 +185,49 @@ class AppController(QObject):
     def on_log_message(self, message: str, level: str):
         """Handle log message from worker"""
         self.main_window.add_activity_log(message, level)
+
+    def on_request_auth_code(self):
+        """Handle request for Telegram auth code"""
+        from PySide6.QtWidgets import QInputDialog
+
+        self.logger.info("Requesting Telegram verification code from user")
+        self.main_window.add_activity_log("Please enter Telegram verification code", "info")
+
+        # Show input dialog for verification code
+        code, ok = QInputDialog.getText(
+            self.main_window,
+            "Telegram Verification",
+            "Enter the verification code sent to your Telegram app or phone:",
+            )
+
+        if ok and code:
+            self.logger.info("User provided verification code")
+            self.worker.provide_auth_code(code)
+        else:
+            self.logger.warning("User cancelled verification code input")
+            self.worker.provide_auth_code("")  # Provide empty to unblock
+
+    def on_request_2fa_password(self):
+        """Handle request for Telegram 2FA password"""
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+
+        self.logger.info("Requesting Telegram 2FA password from user")
+        self.main_window.add_activity_log("Please enter your 2FA password", "info")
+
+        # Show input dialog for 2FA password (hidden input)
+        password, ok = QInputDialog.getText(
+            self.main_window,
+            "Telegram 2FA",
+            "Your account has Two-Factor Authentication enabled.\nEnter your 2FA password:",
+            QLineEdit.Password
+        )
+
+        if ok and password:
+            self.logger.info("User provided 2FA password")
+            self.worker.provide_2fa_password(password)
+        else:
+            self.logger.warning("User cancelled 2FA password input")
+            self.worker.provide_2fa_password("")  # Provide empty to unblock
 
     def show_settings(self):
         """Show settings dialog"""

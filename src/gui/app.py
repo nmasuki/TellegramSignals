@@ -29,12 +29,55 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
 
-    # Load configuration
-    config = ConfigManager()
+    # Load configuration (without validation to handle missing config gracefully)
+    try:
+        config = ConfigManager(validate=False)
 
-    # Set up logging
+        # Check if configuration is valid
+        is_valid, error_msg = config.is_valid()
+        if not is_valid:
+            # Show error dialog with instructions
+            from PySide6.QtWidgets import QMessageBox
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Configuration Required")
+            msg.setText("Telegram Signal Extractor requires configuration before first use.")
+
+            # Determine config path for user
+            config_dir = config.project_root / "config"
+            env_file = config_dir / ".env"
+            config_file = config.config_path
+
+            msg.setInformativeText(
+                f"Configuration error: {error_msg}\n\n"
+                f"Configuration location: {config_dir}\n\n"
+                "Setup steps:\n\n"
+                f"1. Create a '.env' file at:\n   {env_file}\n\n"
+                "2. Add your Telegram API credentials:\n"
+                "   TELEGRAM_API_ID=your_api_id\n"
+                "   TELEGRAM_API_HASH=your_api_hash\n"
+                "   TELEGRAM_PHONE=+1234567890\n\n"
+                "3. Get API credentials from:\n   https://my.telegram.org\n\n"
+                f"4. (Optional) Edit {config_file.name}\n   to add channels to monitor."
+            )
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec()
+            sys.exit(1)
+
+    except Exception as e:
+        from PySide6.QtWidgets import QMessageBox
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Configuration Error")
+        msg.setText("Failed to load configuration.")
+        msg.setInformativeText(str(e))
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()
+        sys.exit(1)
+
+    # Set up logging (pass project_root for correct path resolution)
     logging_config = config.config.get('logging', {})
-    setup_logging(logging_config)
+    setup_logging(logging_config, config.project_root)
 
     # Create main window and controller
     main_window = MainWindow()

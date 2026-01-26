@@ -18,7 +18,12 @@ def setup_logging(config: dict, project_root: Optional[Path] = None) -> logging.
         Configured root logger
     """
     if project_root is None:
-        project_root = Path(__file__).parent.parent.parent
+        # Fallback for when project_root is not provided
+        # Works in both development and PyInstaller bundle
+        if getattr(sys, 'frozen', False):
+            project_root = Path(sys.executable).parent
+        else:
+            project_root = Path(__file__).parent.parent.parent
 
     # Get logging configuration
     log_level = config.get('level', 'INFO')

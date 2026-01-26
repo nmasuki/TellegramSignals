@@ -52,7 +52,7 @@ extraction:
 output:
   # CSV output settings
   csv:
-    file_path: "%APPDATA%\\MetaQuotes\\Terminal\\Common\\Files\\TelegramSignals\\signal.csv"
+    file_path: "%APPDATA%\\MetaQuotes\\Terminal\\Common\\Files\\TelegramSignals\\signals.csv"
     encoding: "utf-8"
     append_mode: true
 
