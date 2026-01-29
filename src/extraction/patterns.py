@@ -40,6 +40,7 @@ UNIFIED_PATTERNS = {
 
     'entry_single': [
         rf'{AT_SIGN}{SPACE}*(\d+\.?\d*)(?!{DASH})',  # @price format (not followed by dash)
+        rf'\b(?:BUY|SELL){SPACE}+(\d+\.?\d*)(?!{DASH})',  # BUY/SELL price format (e.g., "SELL 3120.00")
     ],
 
     'stop_loss': [
@@ -47,7 +48,7 @@ UNIFIED_PATTERNS = {
         rf'\bSL{SPACE}+(\d+\.?\d*)',                 # SL 1234 format (no colon)
         rf'si{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',   # si: 1234, si : 1234 formats (common typo)
         rf'\bSI{SPACE}+(\d+\.?\d*)',                 # SI 1234 format (common typo)
-        rf'stop{SPACE}*loss{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',
+        rf'stop\W*loss{SPACE}*{COLON}?{SPACE}*(\d+\.?\d*)',  # Stop Loss, StopLoss, Stop-Loss formats
         rf'stop{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',
         rf'\bStop{SPACE}+(\d+\.?\d*)',              # Stop 1234 format
     ],
@@ -56,12 +57,14 @@ UNIFIED_PATTERNS = {
         rf'tp{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',      # tp1:, tp 1, tp1 5085 formats
         rf'target{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',  # target1:, target 1 5085 formats
         rf'\bT{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',     # T1:, T 1, T1 5085 formats
+        rf'take\W*profit{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',  # Take Profit 1, TakeProfit1 formats
     ],
 
     'take_profit_single': [
         rf'\btp{COLON}{SPACE}*(\d+\.?\d*)',         # tp: 1234 format (no number)
         rf'\btarget{COLON}{SPACE}*(\d+\.?\d*)',     # target: 1234 format
         rf'\bT{COLON}{SPACE}*(\d+\.?\d*)',          # T: 1234 format
+        rf'take\W*profit{SPACE}*{COLON}?{SPACE}*(\d+\.?\d*)',  # Take Profit: 1234, TakeProfit 1234 formats
     ],
 
     'stop_loss_numbered': [

@@ -1,186 +1,141 @@
-# Telegram Signal Extraction System Configuration
-
-# Telegram Configuration
 telegram:
-  # Session file will be stored in sessions/ directory
   session_name: telegram_session
-
-  # Connection settings
+  api_id: 38958887
+  api_hash: 6e842e56514fecd279dc62746727ec2a
+  phone: '+254720805835'
   connection:
-    timeout: 30  # Connection timeout in seconds
-    retry_delay: 5  # Initial retry delay in seconds
-    max_retries: 5  # Maximum reconnection attempts
-
-  # Channels to monitor
+    timeout: 30
+    retry_delay: 5
+    max_retries: 5
   channels:
-    - username: "nickalphatrader"
-      enabled: true
-      description: "Nick Alpha Trader signals"
-
-    - username: "GaryGoldLegacy"
-      enabled: true
-      description: "Gary Gold Legacy signals"
-
-    - username: "goldfx_signls0"
-      enabled: true
-      description: "GOLD FX SIGNALS"
-
-    - username: "VasilyTraderVIPSignals"
-      enabled: true
-      description: "Vasily Trader VIP - 25k+ subs, 10+ years experience, XAUUSD signals"
-
-    - username: "VasilyTrading"
-      enabled: true
-      description: "Vasily Trading - free signals channel"
-
-    - username: "GoldSignalsDaily"
-      enabled: true
-      description: "Gold Signals Daily - 126k+ subs, gold-focused, technical/fundamental"
-
-    - username: "UnitedSignalsF"
-      enabled: true
-      description: "United Signals - 11k+ members, 5+ years, daily gold setups"
-
-# Signal Extraction Configuration
+  - username: nickalphatrader
+    enabled: true
+    confidence: 0.90
+    description: Nick Alpha Trader signals
+  - username: VasilyTraderVIPSignals
+    enabled: true
+    confidence: 0.70
+    description: Vasily Trader VIP - 65-68% win rate, 10+ years experience
+  - username: GaryGoldLegacy
+    enabled: true
+    confidence: 0.60
+    description: Gary Gold Legacy - related channel tested at ~10% win rate
+  - username: goldfx_signls0
+    enabled: false
+    confidence: 0.30
+    description: GOLD FX SIGNALS - flagged as potential scam
+  - username: VasilyTrading
+    enabled: false
+    confidence: 0.70
+    description: Vasily Trading - free signals channel
+  - username: GoldSignalsDaily
+    enabled: false
+    confidence: 0.50
+    description: Gold Signals Daily - 126k+ subs, unverified win rate
+  - username: UnitedSignalsF
+    enabled: false
+    confidence: 0.55
+    description: United Signals - 5+ years, mixed reviews (2.7/5 Trustpilot)
+  - username: OnlyGoldSnipers
+    enabled: false
+    confidence: 0.35
+    description: OnlyGoldSnipers - 21% success rate in backtest, red flags
+  - username: TRADE_WITH_CHARLES13
+    enabled: false
+    confidence: 0.40
+    description: TRADE_WITH_CHARLES13 - unknown, no reviews found
 extraction:
-  # Minimum confidence score (0.0 to 1.0)
-  # Signals below this threshold will be logged as errors
   min_confidence: 0.75
-
-  # Confidence weights for scoring
   confidence_weights:
-    symbol: 0.25
-    direction: 0.25
-    entry: 0.20
+    symbol: 0.20
+    direction: 0.20
+    entry: 0.15
     stop_loss: 0.15
-    take_profit: 0.15
-
-  # Symbol normalization mapping
+    take_profit: 0.10
+    channel_confidence: 0.20  # Weight for channel reliability (from per-channel config)
   symbol_mapping:
     GOLD: XAUUSD
     Gold: XAUUSD
-    "XAU/USD": XAUUSD
+    XAU/USD: XAUUSD
     XAUUSD: XAUUSD
-    "EUR/USD": EURUSD
+    EUR/USD: EURUSD
     EURUSD: EURUSD
-    "GBP/USD": GBPUSD
+    GBP/USD: GBPUSD
     GBPUSD: GBPUSD
-    "BTC/USD": BTCUSD
+    BTC/USD: BTCUSD
     BTCUSD: BTCUSD
-
-# Output Configuration
 output:
-  # CSV output settings
   csv:
-    file_path: "%APPDATA%\\MetaQuotes\\Terminal\\Common\\Files\\TelegramSignals\\signals.csv"
-    encoding: "utf-8"
+    file_path: '%APPDATA%\MetaQuotes\Terminal\Common\Files\TelegramSignals\signals.csv'
+    encoding: utf-8
     append_mode: true
-
-    # CSV field order
     fields:
-      - message_id
-      - channel_username
-      - timestamp
-      - symbol
-      - direction
-      - entry_price
-      - entry_price_min
-      - entry_price_max
-      - stop_loss
-      - take_profit_1
-      - take_profit_2
-      - take_profit_3
-      - take_profit_4
-      - confidence_score
-      - raw_message
-      - extracted_at
-
-  # Error logging settings
+    - message_id
+    - channel_username
+    - timestamp
+    - symbol
+    - direction
+    - entry_price
+    - entry_price_min
+    - entry_price_max
+    - stop_loss
+    - take_profit_1
+    - take_profit_2
+    - take_profit_3
+    - take_profit_4
+    - confidence_score
+    - raw_message
+    - extracted_at
   error_log:
-    file_path: "logs/extraction_errors.jsonl"
-    max_bytes: 10485760  # 10 MB
+    file_path: logs/extraction_errors.jsonl
+    max_bytes: 10485760
     backup_count: 5
-
-# Logging Configuration
 logging:
-  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
   level: INFO
-
-  # Log format
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  date_format: "%Y-%m-%d %H:%M:%S"
-
-  # Console logging
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  date_format: '%Y-%m-%d %H:%M:%S'
   console:
     enabled: true
     level: INFO
-
-  # File logging
   file:
     enabled: true
-    file_path: "logs/system.log"
+    file_path: logs/system.log
     level: DEBUG
-    max_bytes: 10485760  # 10 MB
+    max_bytes: 10485760
     backup_count: 10
-
-  # Performance metrics logging
   metrics:
     enabled: true
-    log_interval: 300  # Log metrics every 5 minutes
-
-# Validation Rules
+    log_interval: 300
 validation:
-  # Price validation settings
   price_validation:
     enabled: true
-
-    # For BUY signals: SL < Entry < TP
-    # For SELL signals: TP < Entry < SL
     enforce_price_logic: true
-
-  # Symbol validation
   symbol_validation:
     enabled: true
     allowed_symbols:
-      - XAUUSD
-      - EURUSD
-      - GBPUSD
-      - BTCUSD
-      - USDJPY
-      - AUDUSD
-      - USDCAD
-      - NZDUSD
-      - USDCHF
-
-  # Duplicate detection (optional, for future use)
+    - XAUUSD
+    - EURUSD
+    - GBPUSD
+    - BTCUSD
+    - USDJPY
+    - AUDUSD
+    - USDCAD
+    - NZDUSD
+    - USDCHF
   duplicate_detection:
     enabled: false
-    time_window: 300  # seconds
-
-# System Settings
+    time_window: 300
 system:
-  # Health monitoring
   health_check:
     enabled: true
-    interval: 60  # seconds
-
-  # Graceful shutdown
+    interval: 60
   shutdown:
-    timeout: 10  # seconds to wait for cleanup
-
-  # Resource limits
+    timeout: 10
   resources:
     max_memory_mb: 512
     max_queue_size: 1000
-
-# Development/Debug Settings
 debug:
-  # Save raw messages for debugging
   save_raw_messages: false
-  raw_messages_dir: "logs/raw_messages"
-
-  # Dry run mode (don't write to CSV)
+  raw_messages_dir: logs/raw_messages
   dry_run: false
-
-  # Verbose extraction logging
   verbose_extraction: false

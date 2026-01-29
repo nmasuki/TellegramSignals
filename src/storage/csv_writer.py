@@ -3,6 +3,7 @@ import csv
 import logging
 from pathlib import Path
 from typing import List
+from datetime import datetime, timedelta
 import pandas as pd
 
 from ..extraction.models import Signal
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class CSVWriter:
     """Writes signals to CSV file"""
 
-    # CSV field order
+    # CSV field order (optimized for MT5 consumption - no raw message)
     FIELD_NAMES = [
         'message_id',
         'channel_username',
@@ -30,8 +31,6 @@ class CSVWriter:
         'take_profit_3',
         'take_profit_4',
         'confidence_score',
-        'raw_message',
-        'extraction_notes',
         'extracted_at',
     ]
 
@@ -73,13 +72,14 @@ class CSVWriter:
             IOError: If write fails
         """
         try:
-            # Convert signal to dict
+            # Convert signal to dict and filter to only include FIELD_NAMES
             signal_dict = signal.to_dict()
+            filtered_dict = {k: v for k, v in signal_dict.items() if k in self.FIELD_NAMES}
 
             # Write to CSV
             with open(self.file_path, 'a', newline='', encoding=self.encoding) as f:
-                writer = csv.DictWriter(f, fieldnames=self.FIELD_NAMES)
-                writer.writerow(signal_dict)
+                writer = csv.DictWriter(f, fieldnames=self.FIELD_NAMES, extrasaction='ignore')
+                writer.writerow(filtered_dict)
 
             logger.info(
                 f"Wrote signal to CSV: {signal.symbol} {signal.direction} "
@@ -106,9 +106,11 @@ class CSVWriter:
 
         try:
             with open(self.file_path, 'a', newline='', encoding=self.encoding) as f:
-                writer = csv.DictWriter(f, fieldnames=self.FIELD_NAMES)
+                writer = csv.DictWriter(f, fieldnames=self.FIELD_NAMES, extrasaction='ignore')
                 for signal in signals:
-                    writer.writerow(signal.to_dict())
+                    signal_dict = signal.to_dict()
+                    filtered_dict = {k: v for k, v in signal_dict.items() if k in self.FIELD_NAMES}
+                    writer.writerow(filtered_dict)
 
             logger.info(f"Wrote {len(signals)} signals to CSV")
 
@@ -168,3 +170,58 @@ class CSVWriter:
         except Exception as e:
             logger.error(f"Failed to clear CSV: {e}")
             raise IOError(f"CSV clear failed: {e}")
+
+    def cleanup_old_records(self, max_age_hours: int = 12) -> int:
+        """
+        Remove records older than specified hours
+
+        Args:
+            max_age_hours: Maximum age of records to keep (default 12 hours)
+
+        Returns:
+            Number of records removed
+        """
+        if not self.file_path.exists():
+            return 0
+
+        try:
+            df = pd.read_csv(self.file_path, encoding=self.encoding)
+
+            if df.empty:
+                return 0
+
+            original_count = len(df)
+
+            # Determine which datetime column to use
+            date_column = None
+            if 'extracted_at' in df.columns:
+                date_column = 'extracted_at'
+            elif 'timestamp' in df.columns:
+                date_column = 'timestamp'
+            else:
+                # No date column - file is malformed, clear it
+                logger.warning("No date column found, clearing CSV file")
+                self.clear()
+                return original_count
+
+            # Parse date column as datetime
+            df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
+
+            # Calculate cutoff time
+            cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+
+            # Filter to keep only records within the time window
+            df_filtered = df[df[date_column] >= cutoff_time]
+
+            removed_count = original_count - len(df_filtered)
+
+            if removed_count > 0:
+                # Write filtered data back to CSV
+                df_filtered.to_csv(self.file_path, index=False, encoding=self.encoding)
+                logger.info(f"Cleaned up {removed_count} old records (older than {max_age_hours}h)")
+
+            return removed_count
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup old records: {e}", exc_info=True)
+            return 0

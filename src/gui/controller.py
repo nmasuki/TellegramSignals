@@ -4,6 +4,8 @@ from PySide6.QtCore import QObject, QTimer
 
 from src.gui.worker import BackgroundWorker
 from src.gui.settings_dialog import SettingsDialog
+from src.gui.add_channel_dialog import AddChannelDialog
+from src.gui.error_log_dialog import ErrorLogDialog
 
 
 class AppController(QObject):
@@ -39,7 +41,14 @@ class AppController(QObject):
         # Widget signals
         self.main_window.metrics_widget.start_stop_btn.clicked.connect(self.toggle_monitoring_from_button)
         self.main_window.metrics_widget.settings_btn.clicked.connect(self.show_settings)
-        self.main_window.metrics_widget.open_csv_btn.clicked.connect(self.main_window.open_csv_file)
+        self.main_window.metrics_widget.open_csv_btn.clicked.connect(self.on_open_csv_file)
+
+        # Channel widget signals
+        self.main_window.channel_widget.add_channel_requested.connect(self.on_add_channel_requested)
+        self.main_window.channel_widget.edit_channel_requested.connect(self.on_edit_channel_requested)
+
+        # Metrics widget signals
+        self.main_window.metrics_widget.view_error_log_requested.connect(self.on_view_error_log)
 
     def initialize_ui(self):
         """Initialize UI with current config"""
@@ -48,8 +57,9 @@ class AppController(QObject):
         for channel in channels:
             username = channel.get('username')
             enabled = channel.get('enabled', True)
+            confidence = channel.get('confidence', 1.0)
             if username:
-                self.main_window.channel_widget.add_channel(username, enabled)
+                self.main_window.channel_widget.add_channel(username, enabled, confidence)
 
         # Set CSV path in status bar
         csv_path = self.config.get_csv_path()
@@ -137,11 +147,14 @@ class AppController(QObject):
         # Show notification
         symbol = signal_data.get('symbol', '')
         direction = signal_data.get('direction', '')
-        entry = signal_data.get('entry_price_min', '')
+        entry = signal_data.get('entry_price') or signal_data.get('entry_price_min', '')
+        confidence = signal_data.get('confidence_score', 0)
+        conf_pct = confidence * 100 if confidence else 0
 
+        notification_title = f"New Signal from @{channel}, {conf_pct:.0f}% confidence"
         notification_text = f"{symbol} {direction} @ {entry}"
         self.main_window.tray_icon.show_notification(
-            "New Signal Extracted",
+            notification_title,
             notification_text,
             3000
         )
@@ -228,6 +241,97 @@ class AppController(QObject):
         else:
             self.logger.warning("User cancelled 2FA password input")
             self.worker.provide_2fa_password("")  # Provide empty to unblock
+
+    def on_add_channel_requested(self):
+        """Handle add channel request"""
+        dialog = AddChannelDialog(self.main_window)
+        if dialog.exec():
+            channel_data = dialog.get_channel_data()
+            username = channel_data.get('username', '')
+            description = channel_data.get('description', '')
+            confidence = channel_data.get('confidence', 1.0)
+
+            if username:
+                # Add to config
+                self.config.add_channel(username, description, confidence=confidence)
+
+                # Add to UI
+                self.main_window.channel_widget.add_channel(username, enabled=True, confidence=confidence)
+
+                # Log
+                display_name = description if description else username
+                self.main_window.add_activity_log(f"Added channel: @{username} ({display_name})", "info")
+                self.logger.info(f"Added channel: @{username}")
+
+                # If monitoring is active, need to restart to pick up new channel
+                if self.worker and self.worker.isRunning():
+                    from PySide6.QtWidgets import QMessageBox
+                    reply = QMessageBox.question(
+                        self.main_window,
+                        "Restart Monitoring",
+                        "Restart monitoring to pick up the new channel?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.Yes
+                    )
+                    if reply == QMessageBox.Yes:
+                        self.stop_monitoring()
+                        self.start_monitoring()
+
+    def on_edit_channel_requested(self, username: str):
+        """Handle edit channel request"""
+        # Get current channel data from config
+        channels = self.config.get_channels()
+        channel_data = next((ch for ch in channels if ch.get('username') == username), None)
+
+        if not channel_data:
+            self.logger.warning(f"Channel {username} not found in config")
+            return
+
+        dialog = AddChannelDialog(self.main_window, edit_mode=True, channel_data=channel_data)
+        if dialog.exec():
+            new_data = dialog.get_channel_data()
+            description = new_data.get('description', '')
+            confidence = new_data.get('confidence', 1.0)
+
+            # Update config
+            self.config.update_channel(username, description=description, confidence=confidence)
+
+            # Update UI
+            self.main_window.channel_widget.update_channel_confidence(username, confidence)
+
+            # Log
+            self.main_window.add_activity_log(
+                f"Updated @{username}: confidence={int(confidence*100)}%", "info"
+            )
+            self.logger.info(f"Updated channel: @{username} (confidence={confidence})")
+
+    def on_open_csv_file(self):
+        """Open CSV file from config path"""
+        import os
+        import subprocess
+        import sys
+
+        csv_path = self.config.get_csv_path()
+        if csv_path.exists():
+            if sys.platform == 'win32':
+                os.startfile(str(csv_path))
+            elif sys.platform == 'darwin':
+                subprocess.run(['open', str(csv_path)])
+            else:
+                subprocess.run(['xdg-open', str(csv_path)])
+        else:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.main_window,
+                "File Not Found",
+                f"CSV file not found:\n{csv_path}"
+            )
+
+    def on_view_error_log(self):
+        """Handle view error log request"""
+        error_log_path = self.config.get_error_log_path()
+        dialog = ErrorLogDialog(error_log_path, self.main_window)
+        dialog.exec()
 
     def show_settings(self):
         """Show settings dialog"""

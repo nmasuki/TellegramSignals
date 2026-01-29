@@ -40,6 +40,10 @@ class BackgroundWorker(QThread):
             'start_time': None
         }
 
+        # Cleanup tracking
+        self._last_cleanup_time = None
+        self._cleanup_interval_hours = 1  # Run cleanup every hour
+
         # Authentication responses (set by GUI thread)
         self._auth_code = None
         self._auth_password = None
@@ -52,6 +56,9 @@ class BackgroundWorker(QThread):
         self.error_logger = None
         self.signal_store = None
         self.signal_server = None
+
+        # Track processed messages to avoid duplicates (message_id -> content hash)
+        self._processed_messages = {}
 
     def run(self):
         """Run the worker thread"""
@@ -115,6 +122,9 @@ class BackgroundWorker(QThread):
 
                 # Emit stats periodically
                 self.emit_stats()
+
+                # Periodic cleanup of old CSV records
+                self._run_periodic_cleanup()
 
         except Exception as e:
             self.logger.error(f"Main loop error: {e}", exc_info=True)
@@ -196,7 +206,17 @@ class BackgroundWorker(QThread):
 
             # Check if this is a signal
             if self.signal_extractor.is_signal(message_text):
-                self.log_message.emit(f"Processing potential signal from @{channel_username}", "info")
+                # Skip if same message with same content was already processed
+                content_hash = hash(message_text)
+                if self._processed_messages.get(message_id) == content_hash:
+                    self.logger.debug(f"Skipping duplicate message {message_id}")
+                    return
+
+                is_edit = message_id in self._processed_messages
+                if is_edit:
+                    self.log_message.emit(f"Processing edited signal from @{channel_username}", "info")
+                else:
+                    self.log_message.emit(f"Processing potential signal from @{channel_username}", "info")
 
                 try:
                     # Extract signal (may raise ValueError for low confidence)
@@ -206,6 +226,9 @@ class BackgroundWorker(QThread):
                         channel_username,
                         timestamp
                     )
+
+                    # Mark as processed with content hash
+                    self._processed_messages[message_id] = content_hash
 
                     # Valid signal - save it
                     self.csv_writer.write_signal(signal)
@@ -218,6 +241,7 @@ class BackgroundWorker(QThread):
 
                     # Emit signal extracted
                     signal_data = {
+                        'message_id': signal.message_id,
                         'timestamp': signal.timestamp,
                         'channel_username': signal.channel_username,
                         'symbol': signal.symbol,
@@ -280,6 +304,32 @@ class BackgroundWorker(QThread):
         }
 
         self.stats_updated.emit(stats_dict)
+
+    def _run_periodic_cleanup(self):
+        """Run periodic cleanup of old CSV records"""
+        now = datetime.now()
+
+        # Run cleanup on first call or after interval has passed
+        if self._last_cleanup_time is None:
+            # Run initial cleanup on startup
+            self._perform_cleanup()
+            self._last_cleanup_time = now
+        else:
+            # Check if interval has passed
+            hours_since_cleanup = (now - self._last_cleanup_time).total_seconds() / 3600
+            if hours_since_cleanup >= self._cleanup_interval_hours:
+                self._perform_cleanup()
+                self._last_cleanup_time = now
+
+    def _perform_cleanup(self):
+        """Perform the actual cleanup"""
+        try:
+            if self.csv_writer:
+                removed = self.csv_writer.cleanup_old_records(max_age_hours=12)
+                if removed > 0:
+                    self.log_message.emit(f"Cleaned up {removed} old signal records (>12h)", "info")
+        except Exception as e:
+            self.logger.error(f"CSV cleanup error: {e}")
 
     def stop(self):
         """Stop the worker"""

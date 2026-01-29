@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 PyInstaller spec file for Telegram Signal Extractor
-Creates a portable Windows executable with GUI
+Creates a portable executable for Windows and macOS
 """
 
 import sys
@@ -11,6 +11,10 @@ block_cipher = None
 
 # Project root
 PROJECT_ROOT = Path(SPECPATH)
+
+# Platform detection
+IS_WINDOWS = sys.platform == 'win32'
+IS_MACOS = sys.platform == 'darwin'
 
 # Collect data files
 datas = [
@@ -41,10 +45,6 @@ hiddenimports = [
     'numpy',
     'dateutil',
     'yaml',
-    # Windows specific
-    'win32api',
-    'win32con',
-    'win32gui',
     # HTTP server
     'http.server',
     'socketserver',
@@ -54,8 +54,28 @@ hiddenimports = [
     'cryptography.hazmat.primitives.ciphers.aead',
     # Other
     'pkg_resources.py2_warn',
-    'plyer.platforms.win.notification',
 ]
+
+# Platform-specific hidden imports
+if IS_WINDOWS:
+    hiddenimports.extend([
+        'win32api',
+        'win32con',
+        'win32gui',
+        'plyer.platforms.win.notification',
+    ])
+elif IS_MACOS:
+    hiddenimports.extend([
+        'plyer.platforms.macosx.notification',
+    ])
+
+# Icon file (platform-specific)
+if IS_WINDOWS:
+    icon_file = str(PROJECT_ROOT / 'src' / 'gui' / 'resources' / 'icons' / 'app.ico')
+elif IS_MACOS:
+    icon_file = str(PROJECT_ROOT / 'src' / 'gui' / 'resources' / 'icons' / 'app.icns')
+else:
+    icon_file = None
 
 # Analysis
 a = Analysis(
@@ -99,11 +119,11 @@ exe = EXE(
     upx=True,
     console=False,  # No console window for GUI app
     disable_windowed_traceback=False,
-    argv_emulation=False,
+    argv_emulation=IS_MACOS,  # Enable for macOS drag-and-drop support
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(PROJECT_ROOT / 'src' / 'gui' / 'resources' / 'icons' / 'app.ico'),
+    icon=icon_file,
 )
 
 coll = COLLECT(
@@ -116,3 +136,21 @@ coll = COLLECT(
     upx_exclude=[],
     name='TelegramSignals',
 )
+
+# macOS: Create .app bundle
+if IS_MACOS:
+    app = BUNDLE(
+        coll,
+        name='TelegramSignals.app',
+        icon=icon_file,
+        bundle_identifier='com.telegramsignals.app',
+        info_plist={
+            'CFBundleName': 'Telegram Signals',
+            'CFBundleDisplayName': 'Telegram Signal Extractor',
+            'CFBundleVersion': '1.0.0',
+            'CFBundleShortVersionString': '1.0.0',
+            'NSHighResolutionCapable': True,
+            'LSMinimumSystemVersion': '10.13.0',
+            'NSRequiresAquaSystemAppearance': False,  # Support dark mode
+        },
+    )

@@ -52,9 +52,9 @@ class SignalTableWidget(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(7)
+        self.table.setColumnCount(12)
         self.table.setHorizontalHeaderLabels([
-            "Time", "Channel", "Symbol", "Direction", "Entry", "SL", "TP1"
+            "Time", "MsgID", "Channel", "Symbol", "Direction", "Entry", "SL", "TP1", "TP2", "TP3", "TP4", "Conf"
         ])
 
         # Configure table
@@ -65,13 +65,18 @@ class SignalTableWidget(QWidget):
 
         # Column sizing
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Time
-        header.setSectionResizeMode(1, QHeaderView.Stretch)           # Channel
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Symbol
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Direction
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Entry
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # SL
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # TP1
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # Time
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)   # MsgID
+        header.setSectionResizeMode(2, QHeaderView.Stretch)            # Channel
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)   # Symbol
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)   # Direction
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)   # Entry
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)   # SL
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)   # TP1
+        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)   # TP2
+        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)   # TP3
+        header.setSectionResizeMode(10, QHeaderView.ResizeToContents)  # TP4
+        header.setSectionResizeMode(11, QHeaderView.ResizeToContents)  # Conf
 
         # Double-click to view details
         self.table.doubleClicked.connect(self.on_row_double_clicked)
@@ -101,13 +106,17 @@ class SignalTableWidget(QWidget):
         time_str = timestamp.strftime("%H:%M:%S")
         self.table.setItem(0, 0, QTableWidgetItem(time_str))
 
+        # Message ID
+        msg_id = signal_data.get('message_id', '')
+        self.table.setItem(0, 1, QTableWidgetItem(str(msg_id) if msg_id else '--'))
+
         # Channel
         channel = signal_data.get('channel_username', 'Unknown')
-        self.table.setItem(0, 1, QTableWidgetItem(channel))
+        self.table.setItem(0, 2, QTableWidgetItem(channel))
 
         # Symbol
         symbol = signal_data.get('symbol', '')
-        self.table.setItem(0, 2, QTableWidgetItem(symbol))
+        self.table.setItem(0, 3, QTableWidgetItem(symbol))
 
         # Direction
         direction = signal_data.get('direction', '')
@@ -119,7 +128,7 @@ class SignalTableWidget(QWidget):
         elif direction == 'SELL':
             direction_item.setForeground(QColor(244, 67, 54))  # Red
 
-        self.table.setItem(0, 3, direction_item)
+        self.table.setItem(0, 4, direction_item)
 
         # Entry
         entry_min = signal_data.get('entry_price_min')
@@ -135,15 +144,34 @@ class SignalTableWidget(QWidget):
         else:
             entry_str = "--"
 
-        self.table.setItem(0, 4, QTableWidgetItem(entry_str))
+        self.table.setItem(0, 5, QTableWidgetItem(entry_str))
 
         # Stop Loss
         sl = signal_data.get('stop_loss', '')
-        self.table.setItem(0, 5, QTableWidgetItem(str(sl) if sl else '--'))
+        self.table.setItem(0, 6, QTableWidgetItem(str(sl) if sl else '--'))
 
-        # Take Profit 1
+        # Take Profits
         tp1 = signal_data.get('take_profit_1', '')
-        self.table.setItem(0, 6, QTableWidgetItem(str(tp1) if tp1 else '--'))
+        tp2 = signal_data.get('take_profit_2', '')
+        tp3 = signal_data.get('take_profit_3', '')
+        tp4 = signal_data.get('take_profit_4', '')
+        self.table.setItem(0, 7, QTableWidgetItem(str(tp1) if tp1 else '--'))
+        self.table.setItem(0, 8, QTableWidgetItem(str(tp2) if tp2 else '--'))
+        self.table.setItem(0, 9, QTableWidgetItem(str(tp3) if tp3 else '--'))
+        self.table.setItem(0, 10, QTableWidgetItem(str(tp4) if tp4 else '--'))
+
+        # Confidence
+        confidence = signal_data.get('confidence_score', 0)
+        conf_pct = int(confidence * 100) if confidence else 0
+        conf_item = QTableWidgetItem(f"{conf_pct}%")
+        # Color code confidence
+        if confidence >= 0.8:
+            conf_item.setForeground(QColor(76, 175, 80))   # Green
+        elif confidence >= 0.6:
+            conf_item.setForeground(QColor(255, 152, 0))   # Orange
+        else:
+            conf_item.setForeground(QColor(244, 67, 54))   # Red
+        self.table.setItem(0, 11, conf_item)
 
         # Limit rows in table
         if self.table.rowCount() > 50:

@@ -12,6 +12,7 @@ class ChannelWidget(QWidget):
 
     channel_selected = Signal(str)  # Emits channel username
     add_channel_requested = Signal()
+    edit_channel_requested = Signal(str)  # Emits channel username for editing
 
     def __init__(self):
         super().__init__()
@@ -30,6 +31,7 @@ class ChannelWidget(QWidget):
         # Channel list
         self.channel_list = QListWidget()
         self.channel_list.itemClicked.connect(self.on_channel_clicked)
+        self.channel_list.itemDoubleClicked.connect(self.on_channel_double_clicked)
         group_layout.addWidget(self.channel_list)
 
         # Add channel button
@@ -39,7 +41,7 @@ class ChannelWidget(QWidget):
 
         layout.addWidget(group)
 
-    def add_channel(self, username: str, enabled: bool = True):
+    def add_channel(self, username: str, enabled: bool = True, confidence: float = 1.0):
         """Add channel to list"""
         # Create list item
         item = QListWidgetItem()
@@ -59,6 +61,17 @@ class ChannelWidget(QWidget):
         name_label.setFont(font)
         header_layout.addWidget(name_label)
 
+        # Confidence indicator
+        confidence_pct = int(confidence * 100)
+        confidence_label = QLabel(f"Confidence: {confidence_pct}%")
+        if confidence >= 0.7:
+            confidence_label.setStyleSheet("color: #4CAF50; font-size: 10px;")  # Green
+        elif confidence >= 0.5:
+            confidence_label.setStyleSheet("color: #FF9800; font-size: 10px;")  # Orange
+        else:
+            confidence_label.setStyleSheet("color: #f44336; font-size: 10px;")  # Red
+        header_layout.addWidget(confidence_label)
+
         # Last activity
         last_activity_label = QLabel("Last: --")
         last_activity_label.setStyleSheet("color: gray; font-size: 10px;")
@@ -74,9 +87,11 @@ class ChannelWidget(QWidget):
         # Store channel data
         self.channels[username] = {
             'enabled': enabled,
+            'confidence': confidence,
             'item': item,
             'widget': widget,
             'name_label': name_label,
+            'confidence_label': confidence_label,
             'last_activity_label': last_activity_label,
             'signal_count_label': signal_count_label,
             'signal_count': 0
@@ -128,3 +143,34 @@ class ChannelWidget(QWidget):
             if data['item'] == item:
                 self.channel_selected.emit(username)
                 break
+
+    def on_channel_double_clicked(self, item):
+        """Handle channel double-click to edit"""
+        for username, data in self.channels.items():
+            if data['item'] == item:
+                self.edit_channel_requested.emit(username)
+                break
+
+    def update_channel_confidence(self, username: str, confidence: float):
+        """Update channel confidence display"""
+        if username in self.channels:
+            self.channels[username]['confidence'] = confidence
+            confidence_pct = int(confidence * 100)
+            label = self.channels[username]['confidence_label']
+            label.setText(f"Confidence: {confidence_pct}%")
+            if confidence >= 0.7:
+                label.setStyleSheet("color: #4CAF50; font-size: 10px;")
+            elif confidence >= 0.5:
+                label.setStyleSheet("color: #FF9800; font-size: 10px;")
+            else:
+                label.setStyleSheet("color: #f44336; font-size: 10px;")
+
+    def get_channel_data(self, username: str) -> dict:
+        """Get channel data for editing"""
+        if username in self.channels:
+            return {
+                'username': username,
+                'enabled': self.channels[username]['enabled'],
+                'confidence': self.channels[username].get('confidence', 1.0)
+            }
+        return None

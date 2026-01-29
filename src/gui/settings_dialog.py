@@ -1,10 +1,13 @@
 """Settings dialog"""
+import sys
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
     QWidget, QLabel, QLineEdit, QPushButton, QCheckBox,
     QGroupBox, QMessageBox, QDoubleSpinBox, QFileDialog
 )
 from PySide6.QtCore import Qt
+
+from src.utils.autostart import is_autostart_enabled, set_autostart, is_autostart_supported
 
 
 class SettingsDialog(QDialog):
@@ -229,6 +232,12 @@ class SettingsDialog(QDialog):
         self.start_minimized_check = QCheckBox("Start minimized")
         behavior_layout.addWidget(self.start_minimized_check)
 
+        self.autostart_check = QCheckBox("Start automatically on login")
+        self.autostart_check.setToolTip(
+            "Automatically start the application when you log in"
+        )
+        behavior_layout.addWidget(self.autostart_check)
+
         layout.addWidget(behavior_group)
 
         layout.addStretch()
@@ -261,9 +270,27 @@ class SettingsDialog(QDialog):
         self.minimize_to_tray_check.setChecked(True)
         self.start_minimized_check.setChecked(False)
 
+        # Autostart (Windows registry or macOS Launch Agent)
+        if is_autostart_supported():
+            self.autostart_check.setChecked(is_autostart_enabled())
+        else:
+            self.autostart_check.setEnabled(False)
+            self.autostart_check.setToolTip("Autostart is only available on Windows and macOS")
+
     def apply_settings(self):
         """Apply settings"""
-        # For now, just show a message
+        # Apply autostart setting immediately (Windows and macOS)
+        if is_autostart_supported():
+            autostart_enabled = self.autostart_check.isChecked()
+            if not set_autostart(autostart_enabled):
+                QMessageBox.warning(
+                    self,
+                    "Autostart Error",
+                    "Failed to update autostart setting.\n"
+                    "Check if you have the required permissions."
+                )
+
+        # For other settings, show a message
         # Full implementation would update config and restart components
         QMessageBox.information(
             self,

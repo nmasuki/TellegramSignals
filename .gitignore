@@ -34,6 +34,7 @@ env/
 output/
 logs/
 sessions/
+data/
 
 # IDE
 .vscode/

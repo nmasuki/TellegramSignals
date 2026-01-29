@@ -60,6 +60,9 @@ class SignalExtractorApp:
             'extraction_errors': 0,
         }
 
+        # Track processed messages to avoid duplicates (message_id -> content hash)
+        self._processed_messages = {}
+
     def _init_components(self):
         """Initialize all application components"""
         self.logger.info("Initializing components...")
@@ -129,7 +132,17 @@ class SignalExtractorApp:
                 self.logger.debug(f"Message {message_id} is not a signal, skipping")
                 return
 
-            self.logger.info(f"Processing potential signal from @{channel_username}")
+            # Skip if same message with same content was already processed
+            content_hash = hash(message_text)
+            if self._processed_messages.get(message_id) == content_hash:
+                self.logger.debug(f"Skipping duplicate message {message_id}")
+                return
+
+            is_edit = message_id in self._processed_messages
+            if is_edit:
+                self.logger.info(f"Processing edited signal from @{channel_username}")
+            else:
+                self.logger.info(f"Processing potential signal from @{channel_username}")
 
             # Extract signal
             try:
@@ -139,6 +152,9 @@ class SignalExtractorApp:
                     channel_username=channel_username,
                     timestamp=timestamp
                 )
+
+                # Mark as processed with content hash
+                self._processed_messages[message_id] = content_hash
 
                 # Write to CSV
                 self.csv_writer.write_signal(signal)

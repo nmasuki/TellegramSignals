@@ -287,8 +287,19 @@ class ConfigManager:
         return [ch for ch in self.get_channels() if ch.get('enabled', True)]
 
     def get_extraction_config(self) -> Dict[str, Any]:
-        """Get extraction configuration"""
-        return self.config.get('extraction', {})
+        """Get extraction configuration with channel confidence from channels list"""
+        extraction_config = self.config.get('extraction', {}).copy()
+
+        # Build channel_confidence dict from channels list
+        channel_confidence = {}
+        for channel in self.get_channels():
+            username = channel.get('username')
+            confidence = channel.get('confidence', 1.0)
+            if username:
+                channel_confidence[username] = confidence
+
+        extraction_config['channel_confidence'] = channel_confidence
+        return extraction_config
 
     def get_output_config(self) -> Dict[str, Any]:
         """Get output configuration"""
@@ -345,6 +356,80 @@ class ConfigManager:
     def get_symbol_mapping(self) -> Dict[str, str]:
         """Get symbol normalization mapping"""
         return self.get('extraction.symbol_mapping', {})
+
+    def add_channel(self, username: str, description: str = None, confidence: float = 1.0):
+        """
+        Add a new channel to the configuration
+
+        Args:
+            username: Channel username (without @)
+            description: Optional description for the channel
+            confidence: Channel confidence multiplier (0.0-1.0)
+        """
+        if username.startswith('@'):
+            username = username[1:]
+
+        # Check if channel already exists
+        channels = self.get_channels()
+        for channel in channels:
+            if channel.get('username', '').lower() == username.lower():
+                # Channel already exists, just enable it
+                channel['enabled'] = True
+                channel['confidence'] = confidence
+                self._save_config()
+                return
+
+        # Add new channel
+        new_channel = {
+            'username': username,
+            'enabled': True,
+            'confidence': confidence,
+            'description': description or f'{username} signals'
+        }
+
+        if 'telegram' not in self.config:
+            self.config['telegram'] = {}
+        if 'channels' not in self.config['telegram']:
+            self.config['telegram']['channels'] = []
+
+        self.config['telegram']['channels'].append(new_channel)
+        self._save_config()
+
+    def update_channel(self, username: str, description: str = None, confidence: float = None, enabled: bool = None):
+        """
+        Update an existing channel's configuration
+
+        Args:
+            username: Channel username (without @)
+            description: New description (optional)
+            confidence: New confidence multiplier (optional)
+            enabled: New enabled state (optional)
+        """
+        if username.startswith('@'):
+            username = username[1:]
+
+        channels = self.get_channels()
+        for channel in channels:
+            if channel.get('username', '').lower() == username.lower():
+                if description is not None:
+                    channel['description'] = description
+                if confidence is not None:
+                    channel['confidence'] = confidence
+                if enabled is not None:
+                    channel['enabled'] = enabled
+                self._save_config()
+                return True
+        return False
+
+    def _save_config(self):
+        """Save configuration to YAML file"""
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            # Log the error but don't raise - config is still valid in memory
+            import logging
+            logging.getLogger(__name__).error(f"Failed to save config: {e}")
 
     def reload(self):
         """Reload configuration from file"""
