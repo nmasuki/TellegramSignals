@@ -35,6 +35,8 @@ output/
 logs/
 sessions/
 data/
+dist/
+installer/
 
 # IDE
 .vscode/

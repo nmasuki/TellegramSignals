@@ -161,15 +161,13 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Channel widget
+        # Channel widget (grows with window)
         self.channel_widget = ChannelWidget()
-        layout.addWidget(self.channel_widget)
+        layout.addWidget(self.channel_widget, 1)  # Stretch factor 1 = grows
 
-        # Metrics widget
+        # Metrics widget (fixed size)
         self.metrics_widget = MetricsWidget()
-        layout.addWidget(self.metrics_widget)
-
-        layout.addStretch()
+        layout.addWidget(self.metrics_widget, 0)  # Stretch factor 0 = fixed
 
         return panel
 

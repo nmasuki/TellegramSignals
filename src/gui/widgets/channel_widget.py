@@ -28,18 +28,18 @@ class ChannelWidget(QWidget):
         group = QGroupBox("Monitored Channels")
         group_layout = QVBoxLayout(group)
 
-        # Channel list
+        # Channel list (grows with window)
         self.channel_list = QListWidget()
         self.channel_list.itemClicked.connect(self.on_channel_clicked)
         self.channel_list.itemDoubleClicked.connect(self.on_channel_double_clicked)
-        group_layout.addWidget(self.channel_list)
+        group_layout.addWidget(self.channel_list, 1)  # Stretch factor 1 = grows
 
-        # Add channel button
+        # Add channel button (fixed size)
         add_button = QPushButton("+ Add Channel")
         add_button.clicked.connect(self.add_channel_requested.emit)
-        group_layout.addWidget(add_button)
+        group_layout.addWidget(add_button, 0)  # Stretch factor 0 = fixed
 
-        layout.addWidget(group)
+        layout.addWidget(group, 1)  # Group box also grows
 
     def add_channel(self, username: str, enabled: bool = True, confidence: float = 1.0):
         """Add channel to list"""
