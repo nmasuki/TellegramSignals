@@ -100,6 +100,19 @@ class SignalExtractor:
         # Take Profits
         tp_list = self.pattern_matcher.extract_take_profits(text)
         take_profits = [tp_price for _, tp_price in tp_list]
+
+        # If no absolute TPs found, try TP pips format
+        if not take_profits:
+            tp_pips = self.pattern_matcher.extract_take_profits_pips(text)
+            if tp_pips:
+                # Calculate TP prices from pips
+                entry_ref = entry_single or (entry_min + entry_max) / 2 if entry_min and entry_max else None
+                if entry_ref and direction:
+                    take_profits = self._calculate_tp_from_pips(
+                        entry_ref, direction, tp_pips, symbol
+                    )
+                    logger.debug(f"Calculated TPs from pips: {take_profits}")
+
         extracted_fields['take_profits'] = take_profits
 
         # Calculate confidence score
@@ -140,6 +153,62 @@ class SignalExtractor:
         )
 
         return signal
+
+    def _get_pip_value(self, symbol: str) -> float:
+        """
+        Get pip value for a symbol
+
+        Args:
+            symbol: Trading symbol (e.g., XAUUSD, EURUSD)
+
+        Returns:
+            Pip value in price terms
+        """
+        # Gold/XAUUSD: 1 pip = 0.1
+        if symbol in ('XAUUSD', 'GOLD'):
+            return 0.1
+        # JPY pairs: 1 pip = 0.01
+        if 'JPY' in symbol:
+            return 0.01
+        # Standard forex pairs: 1 pip = 0.0001
+        return 0.0001
+
+    def _calculate_tp_from_pips(
+        self,
+        entry_price: float,
+        direction: str,
+        tp_pips: tuple,
+        symbol: str
+    ) -> list:
+        """
+        Calculate TP prices from pips
+
+        Args:
+            entry_price: Entry price for the trade
+            direction: "BUY" or "SELL"
+            tp_pips: Tuple of (min_pips, max_pips) or (pips, None)
+            symbol: Trading symbol
+
+        Returns:
+            List of calculated TP prices
+        """
+        pip_value = self._get_pip_value(symbol or 'XAUUSD')
+        min_pips, max_pips = tp_pips
+
+        take_profits = []
+
+        if direction == 'BUY':
+            # BUY: TPs are above entry
+            take_profits.append(round(entry_price + min_pips * pip_value, 2))
+            if max_pips:
+                take_profits.append(round(entry_price + max_pips * pip_value, 2))
+        else:
+            # SELL: TPs are below entry
+            take_profits.append(round(entry_price - min_pips * pip_value, 2))
+            if max_pips:
+                take_profits.append(round(entry_price - max_pips * pip_value, 2))
+
+        return take_profits
 
     def _calculate_confidence(self, extracted_fields: Dict[str, Any]) -> float:
         """

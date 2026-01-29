@@ -100,8 +100,9 @@ class BackgroundWorker(QThread):
                     self.telegram_client.add_channel(username)  # Not async, don't await
                     self.log_message.emit(f"Monitoring channel: @{username}", "info")
 
-            # Register message handler
+            # Register message handlers (new and edited messages)
             self.telegram_client.on_new_message(self.on_new_message)
+            self.telegram_client.on_message_edited(self.on_new_message)  # Reuse same handler for edits
 
             # Start monitoring
             await self.telegram_client.start_monitoring()

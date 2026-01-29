@@ -21,6 +21,26 @@ telegram:
       enabled: true
       description: "Gary Gold Legacy signals"
 
+    - username: "goldfx_signls0"
+      enabled: true
+      description: "GOLD FX SIGNALS"
+
+    - username: "VasilyTraderVIPSignals"
+      enabled: true
+      description: "Vasily Trader VIP - 25k+ subs, 10+ years experience, XAUUSD signals"
+
+    - username: "VasilyTrading"
+      enabled: true
+      description: "Vasily Trading - free signals channel"
+
+    - username: "GoldSignalsDaily"
+      enabled: true
+      description: "Gold Signals Daily - 126k+ subs, gold-focused, technical/fundamental"
+
+    - username: "UnitedSignalsF"
+      enabled: true
+      description: "United Signals - 11k+ members, 5+ years, daily gold setups"
+
 # Signal Extraction Configuration
 extraction:
   # Minimum confidence score (0.0 to 1.0)

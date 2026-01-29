@@ -7,7 +7,15 @@ from typing import List, Optional, Tuple, Dict
 logger = logging.getLogger(__name__)
 
 
+# Unicode character classes for common Telegram message variants
+DASH = r'[-–—−]'  # hyphen-minus, en-dash, em-dash, minus sign
+COLON = r'[:：]'  # regular colon, fullwidth colon
+AT_SIGN = r'[@＠]'  # regular @, fullwidth @
+SPACE = r'[\s\u00A0]'  # whitespace including non-breaking space
+
+
 # Unified pattern set that handles both Nick Alpha Trader and Gary Gold Legacy formats
+# Uses Unicode-aware character classes to handle Telegram message variants
 UNIFIED_PATTERNS = {
     'symbol': [
         r'\b(GOLD|Gold)\b',
@@ -16,28 +24,54 @@ UNIFIED_PATTERNS = {
     ],
 
     'direction': [
-        r'\b(Buy|Sell)\s+Now\b',      # Gary Gold format
-        r'\b(BUY|SELL)\s+now\b',      # Nick Alpha format
-        r'\b(BUY|SELL)\b',            # Generic fallback
+        rf'\b(Buy|Sell){SPACE}+Now\b',      # Gary Gold format
+        rf'\b(BUY|SELL){SPACE}+now\b',      # Nick Alpha format
+        rf'\b(Buy|Sell){SPACE}+again\b',    # Re-entry signal
+        rf'\b(BUY|SELL){SPACE}+again\b',    # Re-entry signal (uppercase)
+        rf'\b(Buy|Sell){SPACE}+Gold\b',     # "Buy Gold" format
+        rf'\b(BUY|SELL){SPACE}+GOLD\b',     # "BUY GOLD" format
+        r'\b(BUY|SELL)\b',                   # Generic fallback
     ],
 
     'entry_range': [
-        r'@\s*(\d+\.?\d*)-(\d+\.?\d*)',  # Handles both with/without space after @
+        rf'{AT_SIGN}{SPACE}*(\d+\.?\d*){DASH}(\d+\.?\d*)',  # @price1-price2 format
+        rf'\b(?:buy|sell){SPACE}+(?:now{SPACE}+)?(?:again{SPACE}+)?(\d+){SPACE}*{DASH}{SPACE}*(\d+)',  # "buy 5070-5066" format
     ],
 
     'entry_single': [
-        r'@\s*(\d+\.?\d*)(?!-)',
+        rf'{AT_SIGN}{SPACE}*(\d+\.?\d*)(?!{DASH})',  # @price format (not followed by dash)
     ],
 
     'stop_loss': [
-        r'sl:\s*(\d+\.?\d*)',         # Handles both with/without space
-        r'stop\s*loss:\s*(\d+\.?\d*)',
-        r'stop:\s*(\d+\.?\d*)',
+        rf'sl{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',   # sl: 1234, sl : 1234 formats
+        rf'\bSL{SPACE}+(\d+\.?\d*)',                 # SL 1234 format (no colon)
+        rf'si{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',   # si: 1234, si : 1234 formats (common typo)
+        rf'\bSI{SPACE}+(\d+\.?\d*)',                 # SI 1234 format (common typo)
+        rf'stop{SPACE}*loss{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',
+        rf'stop{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',
+        rf'\bStop{SPACE}+(\d+\.?\d*)',              # Stop 1234 format
     ],
 
     'take_profit': [
-        r'tp(\d+):\s*(\d+\.?\d*)',    # Handles both with/without space
-        r'target\s*(\d+):\s*(\d+\.?\d*)',
+        rf'tp{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',      # tp1:, tp 1, tp1 5085 formats
+        rf'target{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',  # target1:, target 1 5085 formats
+        rf'\bT{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',     # T1:, T 1, T1 5085 formats
+    ],
+
+    'take_profit_single': [
+        rf'\btp{COLON}{SPACE}*(\d+\.?\d*)',         # tp: 1234 format (no number)
+        rf'\btarget{COLON}{SPACE}*(\d+\.?\d*)',     # target: 1234 format
+        rf'\bT{COLON}{SPACE}*(\d+\.?\d*)',          # T: 1234 format
+    ],
+
+    'stop_loss_numbered': [
+        rf'stop{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',    # stop1:, stop 1, stop1 5073 formats
+        rf'\bSL{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',    # SL1:, SL 1, SL1 5073 formats
+    ],
+
+    'take_profit_pips': [
+        rf'\bTP{SPACE}+(\d+){SPACE}*{DASH}{SPACE}*(\d+){SPACE}*pips',  # TP 30-100pips format
+        rf'\bTP{SPACE}+(\d+){SPACE}*pips',                              # TP 30pips format
     ]
 }
 
@@ -164,12 +198,22 @@ class PatternMatcher:
         Returns:
             Stop loss price or None
         """
+        # Try standard SL patterns first
         for pattern in UNIFIED_PATTERNS['stop_loss']:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 sl = float(match.group(1))
                 logger.debug(f"Extracted stop loss: {sl}")
                 return sl
+
+        # Try numbered SL patterns (stop1:, SL1:, etc.)
+        for pattern in UNIFIED_PATTERNS['stop_loss_numbered']:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                sl = float(match.group(2))  # group(1) is the number, group(2) is the price
+                logger.debug(f"Extracted stop loss: {sl} (from numbered pattern)")
+                return sl
+
         return None
 
     def extract_take_profits(self, text: str) -> List[Tuple[int, float]]:
@@ -184,6 +228,7 @@ class PatternMatcher:
         """
         tps = []
 
+        # Try numbered TP patterns first (tp1:, tp2:, T1:, target1:)
         for pattern in UNIFIED_PATTERNS['take_profit']:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
@@ -192,10 +237,46 @@ class PatternMatcher:
                 tps.append((tp_num, tp_price))
                 logger.debug(f"Extracted TP{tp_num}: {tp_price}")
 
+        # If no numbered TPs found, try single TP patterns (tp:, target:, T:)
+        if not tps:
+            for pattern in UNIFIED_PATTERNS['take_profit_single']:
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for i, match in enumerate(matches, start=1):
+                    tp_price = float(match.group(1))
+                    tps.append((i, tp_price))
+                    logger.debug(f"Extracted TP{i}: {tp_price} (from single pattern)")
+
         # Sort by TP number
         tps.sort(key=lambda x: x[0])
 
         return tps
+
+    def extract_take_profits_pips(self, text: str) -> Optional[Tuple[int, Optional[int]]]:
+        """
+        Extract take profit in pips format from text
+
+        Args:
+            text: Message text
+
+        Returns:
+            Tuple of (min_pips, max_pips) or (pips, None) for single value, or None
+        """
+        # Try range format first: "TP 30-100pips"
+        for pattern in UNIFIED_PATTERNS['take_profit_pips']:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                if match.lastindex == 2:
+                    # Range format
+                    pips1 = int(match.group(1))
+                    pips2 = int(match.group(2))
+                    logger.debug(f"Extracted TP pips range: {pips1}-{pips2}")
+                    return (min(pips1, pips2), max(pips1, pips2))
+                else:
+                    # Single value format
+                    pips = int(match.group(1))
+                    logger.debug(f"Extracted TP pips: {pips}")
+                    return (pips, None)
+        return None
 
     def is_signal(self, text: str) -> bool:
         """

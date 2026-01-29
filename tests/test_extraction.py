@@ -48,6 +48,18 @@ sl:4945
 tp1:4955
 tp2:4960"""
 
+GOLD_FX_SIGNALS_SAMPLE_1 = """GOLD FX SIGNALS
+Buy Gold @5082.2-5076.2
+
+SI :5074.2
+
+Tp1:5084.2
+Tp2:5088
+
+Enter Slowly-Layer with proper money management
+
+Do not rush your entries"""
+
 NON_SIGNAL_MESSAGE = """Good morning traders! Remember to manage your risk today!"""
 
 
@@ -163,6 +175,25 @@ def test_signal_extractor():
             print(f"[OK] Sample {i}: {signal.direction} @ {signal.entry_price_min}-{signal.entry_price_max}")
         except Exception as e:
             print(f"[FAIL] Sample {i} failed: {e}")
+
+    # Test GOLD FX SIGNALS
+    print("\n--- Extracting GOLD FX SIGNALS Signal ---")
+    try:
+        signal = extractor.extract_signal(
+            text=GOLD_FX_SIGNALS_SAMPLE_1,
+            message_id=12350,
+            channel_username="goldfx_signls0",
+            timestamp=datetime.now()
+        )
+        print(f"[OK] Extraction successful!")
+        print(f"  Symbol: {signal.symbol}")
+        print(f"  Direction: {signal.direction}")
+        print(f"  Entry Range: {signal.entry_price_min} - {signal.entry_price_max}")
+        print(f"  Stop Loss: {signal.stop_loss}")
+        print(f"  Take Profits: {signal.take_profits}")
+        print(f"  Confidence: {signal.confidence_score}")
+    except Exception as e:
+        print(f"[FAIL] Extraction failed: {e}")
 
     print("\n[OK] Signal Extractor tests passed!")
 

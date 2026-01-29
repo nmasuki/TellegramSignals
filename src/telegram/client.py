@@ -38,6 +38,7 @@ class TelegramListener:
         self.connected = False
         self.channels: List[str] = []
         self._message_handlers: List[Callable] = []
+        self._edit_handlers: List[Callable] = []
 
     async def authenticate(self, phone: Optional[str] = None, code_callback=None, password_callback=None):
         """
@@ -169,6 +170,17 @@ class TelegramListener:
         self._message_handlers.append(handler)
         logger.info(f"Registered message handler: {handler.__name__}")
 
+    def on_message_edited(self, handler: Callable):
+        """
+        Register a handler for edited messages
+
+        Args:
+            handler: Async function to call when message is edited
+                     Should accept (message, channel) parameters
+        """
+        self._edit_handlers.append(handler)
+        logger.info(f"Registered edit handler: {handler.__name__}")
+
     async def start_monitoring(self):
         """Start monitoring channels for new messages"""
         if not self.connected:
@@ -179,7 +191,7 @@ class TelegramListener:
 
         logger.info(f"Starting to monitor {len(self.channels)} channel(s): {', '.join(self.channels)}")
 
-        # Register event handler
+        # Register event handler for new messages
         @self.client.on(events.NewMessage(chats=self.channels))
         async def handle_new_message(event):
             try:
@@ -199,7 +211,28 @@ class TelegramListener:
             except Exception as e:
                 logger.error(f"Error processing new message: {e}", exc_info=True)
 
-        logger.info("Message monitoring started. Press Ctrl+C to stop.")
+        # Register event handler for edited messages
+        @self.client.on(events.MessageEdited(chats=self.channels))
+        async def handle_edited_message(event):
+            try:
+                message = event.message
+                chat = await event.get_chat()
+
+                channel_username = getattr(chat, 'username', 'unknown')
+                logger.info(f"Edited message from @{channel_username}: {message.id}")
+
+                # Call edit handlers if registered, otherwise fall back to message handlers
+                handlers = self._edit_handlers if self._edit_handlers else self._message_handlers
+                for handler in handlers:
+                    try:
+                        await handler(message, chat)
+                    except Exception as e:
+                        logger.error(f"Error in edit handler {handler.__name__}: {e}", exc_info=True)
+
+            except Exception as e:
+                logger.error(f"Error processing edited message: {e}", exc_info=True)
+
+        logger.info("Message monitoring started (new + edited). Press Ctrl+C to stop.")
 
     async def run_until_disconnected(self):
         """Run the client until disconnected"""

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "updated_at": "2026-01-27T14:09:48.002763",
+  "signals": {
+    "2233": {
+      "signal": {
+        "message_id": 2233,
+        "channel_username": "goldfx_signls0",
+        "timestamp": "2026-01-27T11:09:42+00:00",
+        "symbol": "XAUUSD",
+        "direction": "BUY",
+        "entry_price": null,
+        "entry_price_min": 5081.5,
+        "entry_price_max": 5087.5,
+        "stop_loss": 5079.5,
+        "take_profit_1": null,
+        "take_profit_2": null,
+        "take_profit_3": null,
+        "take_profit_4": null,
+        "confidence_score": 0.85,
+        "raw_message": "Buy Gold @5087.5-5081.5\n\nSl :5079.5\n\nTp1 :5089.5\nTp2 :5092.6\n\n**Enter Slowly-Layer with proper money management\n\nDo not rush your entries**",
+        "extraction_notes": "",
+        "extracted_at": "2026-01-27T14:09:47.971753"
+      },
+      "status": "pending",
+      "created_at": "2026-01-27T14:09:48.001985",
+      "acknowledged_at": null
+    }
+  }
+}

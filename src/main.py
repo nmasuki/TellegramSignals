@@ -203,8 +203,9 @@ class SignalExtractorApp:
                     if not can_access:
                         self.logger.warning(f"Cannot access channel: @{channel_username}")
 
-            # Register message handler
+            # Register message handlers (new and edited messages)
             self.telegram_client.on_new_message(self.on_new_message)
+            self.telegram_client.on_message_edited(self.on_new_message)  # Reuse same handler for edits
 
             # Start monitoring
             await self.telegram_client.start_monitoring()
