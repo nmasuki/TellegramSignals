@@ -1,9 +1,9 @@
 """In-memory signal store for MT5 EA integration"""
 import json
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from dataclasses import dataclass, field, asdict
 
 from ..extraction.models import Signal
@@ -67,12 +67,17 @@ class SignalStore:
             self._persist()
             return True
 
-    def get_pending_signals(self, symbol: Optional[str] = None) -> List[dict]:
+    def get_pending_signals(
+        self,
+        symbol: Optional[str] = None,
+        since: Optional[datetime] = None
+    ) -> List[dict]:
         """
-        Get all pending signals, optionally filtered by symbol.
+        Get all pending signals, optionally filtered by symbol and/or time.
 
         Args:
             symbol: Filter by trading symbol (e.g., "XAUUSD")
+            since: Only return signals received after this datetime
 
         Returns:
             List of signal dictionaries for JSON response
@@ -86,6 +91,17 @@ class SignalStore:
 
                 if symbol and stored.signal.symbol != symbol:
                     continue
+
+                # Filter by since datetime
+                if since:
+                    signal_time = stored.signal.timestamp or stored.created_at
+                    # Handle timezone comparison
+                    if signal_time.tzinfo is None and since.tzinfo is not None:
+                        signal_time = signal_time.replace(tzinfo=timezone.utc)
+                    elif signal_time.tzinfo is not None and since.tzinfo is None:
+                        since = since.replace(tzinfo=timezone.utc)
+                    if signal_time < since:
+                        continue
 
                 # Convert to dict format for MT5
                 signal_dict = self._signal_to_mt5_dict(stored.signal)
@@ -155,6 +171,16 @@ class SignalStore:
                 "acknowledged": acknowledged,
             }
 
+    def get_all_message_ids(self) -> set:
+        """
+        Get set of all message IDs in the store.
+
+        Returns:
+            Set of message IDs (as integers)
+        """
+        with self._lock:
+            return {int(msg_id) for msg_id in self._signals.keys()}
+
     def _signal_to_mt5_dict(self, signal: Signal) -> dict:
         """Convert Signal to MT5-compatible dictionary"""
         return {
@@ -214,10 +240,11 @@ class SignalStore:
                 signal_dict = stored_data["signal"]
 
                 # Reconstruct Signal object
+                timestamp = datetime.fromisoformat(signal_dict["timestamp"]) if signal_dict.get("timestamp") else None
                 signal = Signal(
                     message_id=signal_dict["message_id"],
                     channel_username=signal_dict["channel_username"],
-                    timestamp=datetime.fromisoformat(signal_dict["timestamp"]) if signal_dict.get("timestamp") else None,
+                    timestamp=timestamp,
                     symbol=signal_dict["symbol"],
                     direction=signal_dict["direction"],
                     entry_price=signal_dict.get("entry_price"),
@@ -235,6 +262,8 @@ class SignalStore:
                     confidence_score=signal_dict.get("confidence_score", 0.0),
                     raw_message=signal_dict.get("raw_message", ""),
                     extraction_notes=signal_dict.get("extraction_notes", ""),
+                    created_at=datetime.fromisoformat(signal_dict["created_at"]) if signal_dict.get("created_at") else timestamp,
+                    extracted_at=datetime.fromisoformat(signal_dict["extracted_at"]) if signal_dict.get("extracted_at") else datetime.now(),
                 )
 
                 stored = StoredSignal(

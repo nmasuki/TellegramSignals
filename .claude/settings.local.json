@@ -22,7 +22,19 @@
       "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\":*)",
       "Bash(\"c:/Projects/nmasuki/TelegramSignals/venv/Scripts/python.exe\" \"c:/Projects/nmasuki/TelegramSignals/scripts/build_exe.py\")",
       "Bash(netsh advfirewall firewall add rule name=\"MetaTrader5 - Inbound\" dir=in action=allow program=\"C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe\" enable=yes)",
-      "Bash(netsh advfirewall firewall add rule name=\"MetaTrader5 - Outbound\" dir=out action=allow program=\"C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe\" enable=yes)"
+      "Bash(netsh advfirewall firewall add rule name=\"MetaTrader5 - Outbound\" dir=out action=allow program=\"C:\\\\Program Files\\\\MetaTrader 5\\\\terminal64.exe\" enable=yes)",
+      "Bash(powershell.exe -Command \"cd ''c:\\\\Projects\\\\nmasuki\\\\TelegramSignals''; python scripts/test_signal.py --no-save -v ''BTC/USD FOREX SIGNALS \\('' ''BTCUSD SELL 78300'' ''TP 1 78100'' ''TP 2 78000'' ''TP 3 779000'' ''TP 4 75000'' ''SL @ 80200''\")",
+      "Bash(powershell.exe -Command \"cd ''c:\\\\Projects\\\\nmasuki\\\\TelegramSignals''; python scripts/test_signal.py --no-save -v ''BTC/USD FOREX SIGNALS \\('' ''BTCUSD SELL 78300'' ''TP 1 78100'' ''TP 2 78000'' ''TP 3 7790'' ''TP 4 75000'' ''SL @ 80200''\")",
+      "Bash(powershell.exe -Command \"cd ''c:\\\\Projects\\\\nmasuki\\\\TelegramSignals''; python scripts/test_signal.py --no-save ''BTC/USD FOREX SIGNALS \\('' ''BTCUSD SELL 78300'' ''TP 1 78100'' ''TP 2 78000'' ''TP 3 77900'' ''TP 4 75000'' ''SL @ 80200''\")",
+      "Bash(powershell.exe -Command \"cd ''c:\\\\Projects\\\\nmasuki\\\\TelegramSignals''; python scripts/test_signal.py --no-save ''BTC/USD FOREX SIGNALS \\('' ''BTCUSD SELL 78300'' ''TP 1 78100'' ''TP 2 78000'' ''TP 3 7790'' ''TP 4 75000'' ''SL @ 80200''\")",
+      "Bash(powershell.exe -Command \"cd ''c:\\\\Projects\\\\nmasuki\\\\TelegramSignals''; python scripts/test_signal.py --no-save ''BTC/USD FOREX SIGNALS \\('' ''BTCUSD SELL 78300'' ''TP 1 78100'' ''TP 2 78000'' ''TP 3 779000'' ''TP 4 75000'' ''SL @ 80200''\")",
+      "Bash(powershell:*)",
+      "Bash(copy \"c:\\\\Projects\\\\nmasuki\\\\TelegramSignals\\\\config\\\\.env\" \"c:\\\\Projects\\\\nmasuki\\\\TelegramSignals\\\\.env\")",
+      "Bash(py -c \"import ast; ast.parse\\(open\\(''src/trading/mt5_executor.py''\\).read\\(\\)\\); print\\(''mt5_executor.py OK''\\)\")",
+      "Bash(py -c \"import ast; ast.parse\\(open\\(''src/main.py''\\).read\\(\\)\\); print\\(''main.py OK''\\)\")",
+      "Bash(py -c \"import ast; ast.parse\\(open\\(''src/server/signal_server.py''\\).read\\(\\)\\); print\\(''signal_server.py OK''\\)\")",
+      "Bash(py -c \"import ast; ast.parse\\(open\\(''src/trading/mt5_executor.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(py -c \"import ast; ast.parse\\(open\\(''src/main.py''\\).read\\(\\)\\); print\\(''OK''\\)\")"
     ]
   }
 }

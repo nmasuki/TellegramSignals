@@ -214,7 +214,7 @@ Gold might go down soon around 4750 maybe
    - take_profit_1, take_profit_2, take_profit_3, take_profit_4
    - confidence_score
    - raw_message, extraction_notes
-   - extracted_at
+   - created_at
 
 3. Verify data types:
    - Prices are numbers (not text)

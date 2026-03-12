@@ -29,14 +29,14 @@
 | tp3 | Float | Decimal | No | Take profit level 3 | 1.1050 |
 | tp4 | Float | Decimal | No | Take profit level 4 | 1.1100 |
 | confidence | Float | 0.0 - 1.0 | Yes | Extraction confidence score | 0.95 |
-| extracted_at | DateTime | ISO 8601 | Yes | When extraction occurred | 2026-01-24T10:30:05Z |
+| created_at | DateTime | ISO 8601 | Yes | When extraction occurred | 2026-01-24T10:30:05Z |
 | processed | Boolean | 0 or 1 | Yes | MT5 EA processing flag | 0 |
 | notes | String | Plain text | No | Extraction warnings/notes | "Partial: TP3 missing" |
 
 ### 1.3 Sample CSV Content
 
 ```csv
-message_id,channel,timestamp,symbol,direction,entry_price,entry_min,entry_max,stop_loss,tp1,tp2,tp3,tp4,confidence,extracted_at,processed,notes
+message_id,channel,timestamp,symbol,direction,entry_price,entry_min,entry_max,stop_loss,tp1,tp2,tp3,tp4,confidence,created_at,processed,notes
 12345,nickalphatrader,2026-01-24T10:30:00Z,EURUSD,BUY,1.0850,,,1.0800,1.0950,1.1000,1.1050,,0.95,2026-01-24T10:30:05Z,0,
 12346,GaryGoldLegacy,2026-01-24T11:15:00Z,XAUUSD,SELL,,2045.00,2050.00,2060.00,2035.00,2025.00,2015.00,2005.00,0.92,2026-01-24T11:15:03Z,0,"Range entry detected"
 12347,nickalphatrader,2026-01-24T12:00:00Z,GBPJPY,BUY,185.50,,,185.00,186.50,187.50,,,0.88,2026-01-24T12:00:02Z,0,"TP3 not found"

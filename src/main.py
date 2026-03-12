@@ -12,10 +12,10 @@ from src.config.config_manager import ConfigManager
 from src.utils.logging_setup import setup_logging, get_logger
 from src.telegram.client import TelegramListener
 from src.extraction.extractor import SignalExtractor
-from src.storage.csv_writer import CSVWriter
 from src.storage.error_logger import ErrorLogger
 from src.server.signal_store import SignalStore
 from src.server.signal_server import SignalServer
+from src.trading.mt5_executor import MT5Executor
 
 
 # Global flag for graceful shutdown
@@ -61,7 +61,11 @@ class SignalExtractorApp:
         }
 
         # Track processed messages to avoid duplicates (message_id -> content hash)
-        self._processed_messages = {}
+        # Load existing message IDs from signal store to prevent duplicates on restart
+        existing_ids = self.signal_store.get_all_message_ids()
+        self._processed_messages = {msg_id: True for msg_id in existing_ids}
+        if existing_ids:
+            self.logger.info(f"Loaded {len(existing_ids)} existing message IDs from signal store")
 
     def _init_components(self):
         """Initialize all application components"""
@@ -80,12 +84,6 @@ class SignalExtractorApp:
 
         # Initialize signal extractor
         self.signal_extractor = SignalExtractor(extraction_config)
-
-        # Initialize CSV writer
-        self.csv_writer = CSVWriter(
-            file_path=self.config.get_csv_path(),
-            encoding=self.config.get('output.csv.encoding', 'utf-8')
-        )
 
         # Initialize error logger
         self.error_logger = ErrorLogger(
@@ -107,6 +105,10 @@ class SignalExtractorApp:
             host=server_config.get('host', '0.0.0.0'),
             port=server_config.get('port', 4726)  # GRAM in leetspeak
         )
+
+        # Initialize MT5 trade executor
+        trading_config = self.config.get('trading', {})
+        self.mt5_executor = MT5Executor(trading_config)
 
         self.logger.info("Components initialized successfully")
 
@@ -156,12 +158,19 @@ class SignalExtractorApp:
                 # Mark as processed with content hash
                 self._processed_messages[message_id] = content_hash
 
-                # Write to CSV
-                self.csv_writer.write_signal(signal)
-
-                # Add to signal store for MT5 EA
+                # Add to signal store for API
                 if self.signal_store.add_signal(signal):
-                    self.logger.info(f"  Signal added to MT5 store (pending)")
+                    self.logger.info(f"  Signal added to store (pending)")
+
+                # Execute trades directly via MT5
+                if self.mt5_executor.enabled:
+                    positions = self.mt5_executor.execute_signal(signal)
+                    if positions:
+                        self.logger.info(
+                            f"  Opened {len(positions)} positions for "
+                            f"{signal.direction} {signal.symbol} "
+                            f"({', '.join(p.tp_label for p in positions)})"
+                        )
 
                 self.stats['signals_extracted'] += 1
 
@@ -193,6 +202,65 @@ class SignalExtractorApp:
                 'channel': getattr(chat, 'username', 'unknown'),
             })
 
+    async def fetch_historical_signals(self, hours: int = 24):
+        """
+        Fetch and process historical messages on startup.
+
+        Args:
+            hours: Number of hours to look back
+        """
+        self.logger.info(f"Fetching historical messages from last {hours} hours...")
+
+        historical_count = 0
+        signals_found = 0
+
+        async for message, chat in self.telegram_client.fetch_historical_messages(hours=hours):
+            try:
+                historical_count += 1
+                message_text = message.text or ""
+                channel_username = getattr(chat, 'username', 'unknown')
+
+                # Quick check if it's a signal
+                if not self.signal_extractor.is_signal(message_text):
+                    continue
+
+                # Skip if already processed (check by message_id)
+                if message.id in self._processed_messages:
+                    continue
+
+                # Try to extract signal
+                try:
+                    signal = self.signal_extractor.extract_signal(
+                        text=message_text,
+                        message_id=message.id,
+                        channel_username=channel_username,
+                        timestamp=message.date
+                    )
+
+                    # Mark as processed
+                    self._processed_messages[message.id] = hash(message_text)
+
+                    # Add to signal store for API
+                    self.signal_store.add_signal(signal)
+
+                    signals_found += 1
+                    self.stats['signals_extracted'] += 1
+
+                    self.logger.info(
+                        f"[Historical] Signal: {signal.symbol} {signal.direction} "
+                        f"@ {signal.entry_price or f'{signal.entry_price_min}-{signal.entry_price_max}'} "
+                        f"(conf: {signal.confidence_score:.2f})"
+                    )
+
+                except ValueError as e:
+                    # Low confidence or extraction failed - skip silently for historical
+                    self.logger.debug(f"[Historical] Skipped message {message.id}: {e}")
+
+            except Exception as e:
+                self.logger.error(f"Error processing historical message: {e}")
+
+        self.logger.info(f"Historical fetch complete: {historical_count} messages scanned, {signals_found} signals found")
+
     async def run(self):
         """Run the application"""
         try:
@@ -219,12 +287,27 @@ class SignalExtractorApp:
                     if not can_access:
                         self.logger.warning(f"Cannot access channel: @{channel_username}")
 
+            # Fetch historical messages on startup
+            startup_fetch_hours = self.config.get('telegram.startup_fetch_hours', 24)
+            if startup_fetch_hours > 0:
+                await self.fetch_historical_signals(hours=startup_fetch_hours)
+
             # Register message handlers (new and edited messages)
             self.telegram_client.on_new_message(self.on_new_message)
             self.telegram_client.on_message_edited(self.on_new_message)  # Reuse same handler for edits
 
             # Start monitoring
             await self.telegram_client.start_monitoring()
+
+            # Connect MT5 executor
+            if self.mt5_executor.enabled:
+                if self.mt5_executor.connect():
+                    self.logger.info("MT5 trade executor connected")
+                else:
+                    self.logger.warning("MT5 trade executor failed to connect - trades will not be executed")
+
+            # Share executor with signal server for stats
+            self.signal_server.set_executor(self.mt5_executor)
 
             # Start HTTP server for MT5 EA
             self.signal_server.start()
@@ -255,6 +338,10 @@ class SignalExtractorApp:
         if hasattr(self, 'signal_server'):
             self.signal_server.stop()
 
+        # Disconnect MT5
+        if hasattr(self, 'mt5_executor'):
+            self.mt5_executor.disconnect()
+
         try:
             await self.telegram_client.disconnect()
         except:
@@ -266,7 +353,6 @@ class SignalExtractorApp:
     def print_status(self):
         """Print current status"""
         channels = self.telegram_client.channels
-        csv_count = self.csv_writer.get_signal_count()
         error_count = self.error_logger.get_error_count()
         store_stats = self.signal_store.get_stats()
 
@@ -276,13 +362,25 @@ class SignalExtractorApp:
         print(f"Monitoring {len(channels)} channel(s):")
         for ch in channels:
             print(f"  - @{ch}")
-        print(f"\nSignals in CSV: {csv_count}")
-        print(f"Extraction errors logged: {error_count}")
+        print(f"\nExtraction errors logged: {error_count}")
         print(f"Min confidence threshold: {self.config.get_min_confidence()}")
-        print(f"\nMT5 Signal Server:")
+        print(f"\nSignal API Server:")
         print(f"  URL: http://localhost:4726/signals")
-        print(f"  Pending signals: {store_stats['pending']}")
+        print(f"  Total signals: {store_stats['total']}")
+        print(f"  Pending: {store_stats['pending']}")
         print(f"  Acknowledged: {store_stats['acknowledged']}")
+
+        # Trading status
+        if self.mt5_executor.enabled:
+            trading_stats = self.mt5_executor.get_stats()
+            print(f"\nMT5 Trade Executor:")
+            print(f"  Connected: {trading_stats['connected']}")
+            print(f"  Open positions: {trading_stats['opened_position_count']}")
+            print(f"  Lot size: {trading_stats['lot_size']}")
+            print(f"  Max positions: {trading_stats['max_positions']}")
+        else:
+            print(f"\nMT5 Trade Executor: disabled")
+
         print("\nPress Ctrl+C to stop")
         print("=" * 60 + "\n")
 

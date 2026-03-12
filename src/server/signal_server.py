@@ -1,7 +1,7 @@
 """HTTP Server for MT5 EA signal delivery"""
 import json
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Optional
@@ -12,8 +12,9 @@ from .signal_store import SignalStore
 class SignalRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for signal endpoints"""
 
-    # Class-level reference to signal store (set by server)
+    # Class-level references (set by server)
     signal_store: Optional[SignalStore] = None
+    mt5_executor = None  # Optional MT5Executor reference
 
     def do_GET(self):
         """Handle GET requests"""
@@ -27,6 +28,8 @@ class SignalRequestHandler(BaseHTTPRequestHandler):
             self._handle_health()
         elif path == "/stats":
             self._handle_stats()
+        elif path == "/positions":
+            self._handle_positions()
         else:
             self._send_error(404, "Not found")
 
@@ -43,7 +46,7 @@ class SignalRequestHandler(BaseHTTPRequestHandler):
             self._send_error(404, "Not found")
 
     def _handle_get_signals(self, query: dict):
-        """Handle GET /signals?symbol=XAUUSD"""
+        """Handle GET /signals?symbol=XAUUSD&since=2026-02-06T10:00:00Z"""
         if not self.signal_store:
             self._send_error(500, "Signal store not initialized")
             return
@@ -51,13 +54,23 @@ class SignalRequestHandler(BaseHTTPRequestHandler):
         # Get optional symbol filter
         symbol = query.get("symbol", [None])[0]
 
+        # Get optional since filter (ISO format datetime)
+        since = None
+        since_str = query.get("since", [None])[0]
+        if since_str:
+            try:
+                since = datetime.fromisoformat(since_str.replace('Z', '+00:00'))
+            except ValueError:
+                self._send_error(400, f"Invalid 'since' format. Use ISO format (e.g., 2026-02-06T10:00:00Z)")
+                return
+
         # Get pending signals
-        signals = self.signal_store.get_pending_signals(symbol=symbol)
+        signals = self.signal_store.get_pending_signals(symbol=symbol, since=since)
 
         response = {
             "signals": signals,
             "count": len(signals),
-            "last_update": datetime.now().isoformat(),
+            "last_update": datetime.now(timezone.utc).isoformat(),
         }
 
         self._send_json(response)
@@ -92,7 +105,31 @@ class SignalRequestHandler(BaseHTTPRequestHandler):
             return
 
         stats = self.signal_store.get_stats()
+
+        # Add trading executor stats
+        if self.mt5_executor:
+            executor_stats = self.mt5_executor.get_stats()
+            stats["trading"] = executor_stats
+            stats["opened_position_count"] = executor_stats.get("opened_position_count", 0)
+        else:
+            stats["opened_position_count"] = 0
+
         self._send_json(stats)
+
+    def _handle_positions(self):
+        """Handle GET /positions"""
+        if not self.mt5_executor:
+            self._send_json({
+                "positions": [],
+                "opened_position_count": 0,
+            })
+            return
+
+        positions = self.mt5_executor.get_all_positions()
+        self._send_json({
+            "positions": positions,
+            "opened_position_count": self.mt5_executor.get_open_position_count(),
+        })
 
     def _send_json(self, data: dict, status: int = 200):
         """Send JSON response"""
@@ -145,6 +182,10 @@ class SignalServer:
         self._thread: Optional[threading.Thread] = None
         self._running = False
 
+    def set_executor(self, executor):
+        """Set the MT5 executor reference for position tracking."""
+        SignalRequestHandler.mt5_executor = executor
+
     def start(self):
         """Start server in background thread"""
         if self._running:
@@ -162,10 +203,13 @@ class SignalServer:
         self._thread.start()
 
         print(f"Signal server started on http://{self.host}:{self.port}")
-        print(f"  GET  /signals?symbol=XAUUSD  - Fetch pending signals")
+        print(f"  GET  /signals                - Fetch all pending signals")
+        print(f"       ?symbol=XAUUSD          - Filter by symbol")
+        print(f"       &since=2026-02-06T10:00:00Z  - Filter by time (ISO format)")
         print(f"  POST /signals/<id>/ack       - Acknowledge signal")
         print(f"  GET  /health                 - Health check")
-        print(f"  GET  /stats                  - Signal statistics")
+        print(f"  GET  /stats                  - Signal statistics + opened position count")
+        print(f"  GET  /positions              - Open positions from MT5 executor")
 
     def stop(self):
         """Stop server"""

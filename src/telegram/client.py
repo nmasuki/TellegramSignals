@@ -1,12 +1,13 @@
 """Telegram client wrapper using Telethon"""
 import asyncio
 import logging
-from typing import Callable, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Callable, List, Optional, AsyncGenerator, Tuple
 from pathlib import Path
 
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
-from telethon.tl.types import User
+from telethon.tl.types import User, Message
 
 
 logger = logging.getLogger(__name__)
@@ -282,3 +283,63 @@ class TelegramListener:
         except Exception as e:
             logger.error(f"Cannot access channel @{channel_username}: {e}")
             return False
+
+    async def fetch_historical_messages(
+        self,
+        hours: int = 24,
+        channel_usernames: List[str] = None
+    ) -> AsyncGenerator[Tuple[Message, any], None]:
+        """
+        Fetch historical messages from the specified time period.
+
+        Args:
+            hours: Number of hours to look back (default: 24)
+            channel_usernames: List of channels to fetch from (default: all added channels)
+
+        Yields:
+            Tuple of (message, chat) for each message found
+        """
+        if not self.connected:
+            raise RuntimeError("Not connected to Telegram. Call connect() first.")
+
+        channels_to_fetch = channel_usernames or self.channels
+        if not channels_to_fetch:
+            logger.warning("No channels to fetch historical messages from")
+            return
+
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(hours=hours)
+
+        logger.info(f"Fetching historical messages from last {hours} hours...")
+
+        total_messages = 0
+        for channel_username in channels_to_fetch:
+            # Remove @ if present
+            if channel_username.startswith('@'):
+                channel_username = channel_username[1:]
+
+            try:
+                entity = await self.client.get_entity(channel_username)
+                channel_messages = 0
+
+                async for message in self.client.iter_messages(
+                    entity,
+                    offset_date=now,
+                    reverse=False
+                ):
+                    # Stop if message is older than our cutoff
+                    if message.date < since:
+                        break
+
+                    # Only yield messages with text content
+                    if message.text:
+                        channel_messages += 1
+                        yield message, entity
+
+                total_messages += channel_messages
+                logger.info(f"  @{channel_username}: {channel_messages} messages")
+
+            except Exception as e:
+                logger.error(f"Error fetching from @{channel_username}: {e}")
+
+        logger.info(f"Historical fetch complete: {total_messages} total messages")

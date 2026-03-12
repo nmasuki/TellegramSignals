@@ -113,7 +113,8 @@ def generate_random_signal(config: dict) -> dict:
     # Generate timestamps
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    extracted_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    created_at = timestamp  # Message timestamp
+    extracted_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")  # When extraction occurred
 
     # Generate other fields
     message_id = random.randint(10000, 99999)
@@ -148,6 +149,7 @@ def generate_random_signal(config: dict) -> dict:
         "confidence_score": confidence,
         "raw_message": "",
         "extraction_notes": notes,
+        "created_at": created_at,
         "extracted_at": extracted_at,
     }
 
@@ -165,7 +167,7 @@ def save_signal(signal: dict, output_path: Path):
         "message_id", "channel_username", "timestamp", "symbol", "direction",
         "entry_price", "entry_price_min", "entry_price_max", "stop_loss",
         "take_profit_1", "take_profit_2", "take_profit_3", "take_profit_4",
-        "confidence_score", "raw_message", "extraction_notes", "extracted_at"
+        "confidence_score", "raw_message", "extraction_notes", "created_at", "extracted_at"
     ]
 
     # Ensure parent directory exists

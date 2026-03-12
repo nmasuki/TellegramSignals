@@ -32,7 +32,13 @@ class Signal:
     extraction_notes: str = ""  # Any warnings or notes
 
     # Processing
-    extracted_at: datetime = field(default_factory=lambda: datetime.now())
+    created_at: Optional[datetime] = None  # Telegram message timestamp
+    extracted_at: datetime = field(default_factory=lambda: datetime.now())  # When extraction occurred
+
+    def __post_init__(self):
+        """Set created_at to timestamp if not provided"""
+        if self.created_at is None:
+            self.created_at = self.timestamp
 
     def to_dict(self) -> dict:
         """Convert signal to dictionary"""
@@ -53,6 +59,7 @@ class Signal:
             'confidence_score': self.confidence_score,
             'raw_message': self.raw_message,
             'extraction_notes': self.extraction_notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
             'extracted_at': self.extracted_at.isoformat() if self.extracted_at else None,
         }
 

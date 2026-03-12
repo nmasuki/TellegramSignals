@@ -3,6 +3,7 @@ telegram:
   api_id: 38958887
   api_hash: 6e842e56514fecd279dc62746727ec2a
   phone: '+254720805835'
+  startup_fetch_hours: 24
   connection:
     timeout: 30
     retry_delay: 5
@@ -10,27 +11,27 @@ telegram:
   channels:
   - username: nickalphatrader
     enabled: true
-    confidence: 0.90
+    confidence: 0.9
     description: Nick Alpha Trader signals
   - username: VasilyTraderVIPSignals
     enabled: true
-    confidence: 0.70
+    confidence: 0.8
     description: Vasily Trader VIP - 65-68% win rate, 10+ years experience
   - username: GaryGoldLegacy
     enabled: true
-    confidence: 0.60
+    confidence: 0.8
     description: Gary Gold Legacy - related channel tested at ~10% win rate
   - username: goldfx_signls0
     enabled: false
-    confidence: 0.30
+    confidence: 0.3
     description: GOLD FX SIGNALS - flagged as potential scam
   - username: VasilyTrading
     enabled: false
-    confidence: 0.70
+    confidence: 0.7
     description: Vasily Trading - free signals channel
   - username: GoldSignalsDaily
     enabled: false
-    confidence: 0.50
+    confidence: 0.5
     description: Gold Signals Daily - 126k+ subs, unverified win rate
   - username: UnitedSignalsF
     enabled: false
@@ -41,18 +42,18 @@ telegram:
     confidence: 0.35
     description: OnlyGoldSnipers - 21% success rate in backtest, red flags
   - username: TRADE_WITH_CHARLES13
-    enabled: false
-    confidence: 0.40
+    enabled: true
+    confidence: 0.75
     description: TRADE_WITH_CHARLES13 - unknown, no reviews found
 extraction:
   min_confidence: 0.75
   confidence_weights:
-    symbol: 0.20
-    direction: 0.20
+    symbol: 0.2
+    direction: 0.2
     entry: 0.15
     stop_loss: 0.15
-    take_profit: 0.10
-    channel_confidence: 0.20  # Weight for channel reliability (from per-channel config)
+    take_profit: 0.1
+    channel_confidence: 0.2
   symbol_mapping:
     GOLD: XAUUSD
     Gold: XAUUSD
@@ -64,6 +65,20 @@ extraction:
     GBPUSD: GBPUSD
     BTC/USD: BTCUSD
     BTCUSD: BTCUSD
+trading:
+  enabled: false
+  lot_size: 0.01
+  positions_per_signal: 6
+  max_positions: 30
+  min_confidence: 0.80
+  slippage: 20
+  magic_number: 472600
+  mt5_path: null
+  allowed_symbols:
+  - XAUUSD
+  - XAGUSD
+  - EURUSD
+  - GBPUSD
 output:
   csv:
     file_path: '%APPDATA%\MetaQuotes\Terminal\Common\Files\TelegramSignals\signals.csv'
@@ -85,6 +100,7 @@ output:
     - take_profit_4
     - confidence_score
     - raw_message
+    - created_at
     - extracted_at
   error_log:
     file_path: logs/extraction_errors.jsonl

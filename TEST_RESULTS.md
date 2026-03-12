@@ -191,7 +191,7 @@ CSV fields:
   confidence_score: 1.0
   raw_message: ...
   extraction_notes:
-  extracted_at: 2026-01-24T10:30:15
+  created_at: 2026-01-24T10:30:15
 
 ✓ CSV output format test passed!
 

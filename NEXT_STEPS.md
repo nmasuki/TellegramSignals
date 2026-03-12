@@ -76,7 +76,7 @@ Located in: `output/signals.csv`
 
 Contains extracted signals ready for MT5 EA:
 ```csv
-message_id,channel_username,timestamp,symbol,direction,entry_price,entry_price_min,entry_price_max,stop_loss,take_profit_1,take_profit_2,take_profit_3,take_profit_4,confidence_score,raw_message,extraction_notes,extracted_at
+message_id,channel_username,timestamp,symbol,direction,entry_price,entry_price_min,entry_price_max,stop_loss,take_profit_1,take_profit_2,take_profit_3,take_profit_4,confidence_score,raw_message,extraction_notes,created_at
 ```
 
 ### extraction_errors.jsonl

@@ -196,7 +196,7 @@ Press Ctrl+C to stop
 ### CSV Output (signals.csv)
 
 ```csv
-message_id,channel_username,timestamp,symbol,direction,entry_price,entry_price_min,entry_price_max,stop_loss,take_profit_1,take_profit_2,take_profit_3,take_profit_4,confidence_score,raw_message,extraction_notes,extracted_at
+message_id,channel_username,timestamp,symbol,direction,entry_price,entry_price_min,entry_price_max,stop_loss,take_profit_1,take_profit_2,take_profit_3,take_profit_4,confidence_score,raw_message,extraction_notes,created_at
 12345,nickalphatrader,2026-01-24 16:34:12,XAUUSD,SELL,,4746.5,4750.5,4752.5,4730,4720,,,1.0,"GOLD SELL...",,"2026-01-24 16:34:12"
 ```
 

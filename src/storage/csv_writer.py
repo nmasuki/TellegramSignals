@@ -3,7 +3,7 @@ import csv
 import logging
 from pathlib import Path
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from ..extraction.models import Signal
@@ -31,6 +31,7 @@ class CSVWriter:
         'take_profit_3',
         'take_profit_4',
         'confidence_score',
+        'created_at',
         'extracted_at',
     ]
 
@@ -160,6 +161,25 @@ class CSVWriter:
             logger.error(f"Failed to count signals: {e}")
             return 0
 
+    def get_existing_message_ids(self) -> set:
+        """
+        Get set of message IDs already in the CSV.
+
+        Returns:
+            Set of message IDs (as integers)
+        """
+        if not self.file_path.exists():
+            return set()
+
+        try:
+            df = pd.read_csv(self.file_path, encoding=self.encoding)
+            if 'message_id' in df.columns:
+                return set(df['message_id'].dropna().astype(int).tolist())
+            return set()
+        except Exception as e:
+            logger.error(f"Failed to get existing message IDs: {e}")
+            return set()
+
     def clear(self):
         """Clear all signals from CSV (keeps header)"""
         try:
@@ -194,8 +214,8 @@ class CSVWriter:
 
             # Determine which datetime column to use
             date_column = None
-            if 'extracted_at' in df.columns:
-                date_column = 'extracted_at'
+            if 'created_at' in df.columns:
+                date_column = 'created_at'
             elif 'timestamp' in df.columns:
                 date_column = 'timestamp'
             else:
@@ -207,8 +227,8 @@ class CSVWriter:
             # Parse date column as datetime
             df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
 
-            # Calculate cutoff time
-            cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+            # Calculate cutoff time (use UTC to match CSV timestamps)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
 
             # Filter to keep only records within the time window
             df_filtered = df[df[date_column] >= cutoff_time]

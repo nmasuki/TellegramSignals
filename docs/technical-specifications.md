@@ -415,7 +415,7 @@ class Signal:
     extraction_notes: Optional[str]  # Any warnings or notes
 
     # Processing
-    extracted_at: datetime  # When extraction occurred
+    created_at: datetime  # When extraction occurred
     processed: bool = False  # For MT5 EA to mark as processed
 ```
 

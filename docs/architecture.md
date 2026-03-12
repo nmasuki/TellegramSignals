@@ -304,7 +304,7 @@ class SignalExtractor:
             take_profits=take_profits,
             confidence_score=confidence,
             raw_message=text,
-            extracted_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc)
         )
 ```
 

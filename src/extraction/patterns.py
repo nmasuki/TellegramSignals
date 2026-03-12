@@ -20,6 +20,8 @@ UNIFIED_PATTERNS = {
     'symbol': [
         r'\b(GOLD|Gold)\b',
         r'\b(XAU/?USD)\b',
+        r'\b(SILVER|Silver|Slver|SLVER)\b',  # Silver including common typo
+        r'\b(XAG/?USD)\b',
         r'\b([A-Z]{3}/?[A-Z]{3})\b',
     ],
 
@@ -39,25 +41,29 @@ UNIFIED_PATTERNS = {
     ],
 
     'entry_single': [
-        rf'{AT_SIGN}{SPACE}*(\d+\.?\d*)(?!{DASH})',  # @price format (not followed by dash)
-        rf'\b(?:BUY|SELL){SPACE}+(\d+\.?\d*)(?!{DASH})',  # BUY/SELL price format (e.g., "SELL 3120.00")
+        rf'\b(?:BUY|SELL){SPACE}*{AT_SIGN}{SPACE}*(\d+\.?\d*)(?!{DASH})',  # BUY/SELL @price format (e.g., "BUY @ 2650")
+        rf'\b(?:BUY|SELL){SPACE}+(?:GOLD|XAUUSD|SILVER|XAGUSD){SPACE}*{AT_SIGN}{SPACE}*(\d+\.?\d*)(?!{DASH})',  # Buy Gold @4776 format
+        rf'\b(?:BUY|SELL){SPACE}+(\d+\.?\d*)(?!{DASH})',  # BUY/SELL price format (e.g., "SELL 78300")
     ],
 
     'stop_loss': [
         rf'sl{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',   # sl: 1234, sl : 1234 formats
-        rf'\bSL{SPACE}+(\d+\.?\d*)',                 # SL 1234 format (no colon)
+        rf'\bSL{SPACE}*{AT_SIGN}{SPACE}*(\d+\.?\d*)',  # SL @ 80200, SL@ 80200 formats
+        rf'\bSL{SPACE}+(\d+\.?\d*)(?!{SPACE}*pips)',  # SL 1234 format (no colon, not followed by pips)
         rf'si{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',   # si: 1234, si : 1234 formats (common typo)
-        rf'\bSI{SPACE}+(\d+\.?\d*)',                 # SI 1234 format (common typo)
-        rf'stop\W*loss{SPACE}*{COLON}?{SPACE}*(\d+\.?\d*)',  # Stop Loss, StopLoss, Stop-Loss formats
+        rf'\bSI{SPACE}+(\d+\.?\d*)(?!{SPACE}*pips)',  # SI 1234 format (common typo, not followed by pips)
+        rf'stop\W*loss{SPACE}*{COLON}?{SPACE}*(\d+\.?\d*)(?!{SPACE}*pips)',  # Stop Loss formats (not followed by pips)
         rf'stop{SPACE}*{COLON}{SPACE}*(\d+\.?\d*)',
-        rf'\bStop{SPACE}+(\d+\.?\d*)',              # Stop 1234 format
+        rf'\bStop{SPACE}+(\d+\.?\d*)(?!{SPACE}*pips)',  # Stop 1234 format (not followed by pips)
     ],
 
     'take_profit': [
-        rf'tp{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',      # tp1:, tp 1, tp1 5085 formats
-        rf'target{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',  # target1:, target 1 5085 formats
-        rf'\bT{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',     # T1:, T 1, T1 5085 formats
-        rf'take\W*profit{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',  # Take Profit 1, TakeProfit1 formats
+        rf'tp{SPACE}*(\d){COLON}{SPACE}*(\d+\.?\d*)',         # tp1: 5085 format (single digit + colon)
+        rf'tp{SPACE}*(\d){SPACE}+(\d{{3,}}\.?\d*)',           # tp 1 5085 format (single digit + space + 3+ digit price)
+        rf'target{SPACE}*(\d){COLON}?{SPACE}*(\d{{3,}}\.?\d*)',  # target1: 5085 formats
+        rf'\bT{SPACE}*(\d){COLON}{SPACE}*(\d+\.?\d*)',        # T1: 5085 format (single digit + colon)
+        rf'\bT{SPACE}*(\d){SPACE}+(\d{{3,}}\.?\d*)',          # T 1 5085 format (single digit + space + 3+ digit price)
+        rf'take\W*profit{SPACE}*(\d){COLON}?{SPACE}*(\d{{3,}}\.?\d*)',  # Take Profit 1: 5085 formats
     ],
 
     'take_profit_single': [
@@ -75,6 +81,16 @@ UNIFIED_PATTERNS = {
     'take_profit_pips': [
         rf'\bTP{SPACE}+(\d+){SPACE}*{DASH}{SPACE}*(\d+){SPACE}*pips',  # TP 30-100pips format
         rf'\bTP{SPACE}+(\d+){SPACE}*pips',                              # TP 30pips format
+    ],
+
+    'take_profit_pips_numbered': [
+        rf'\btp{SPACE}*(\d){SPACE}+(\d+){SPACE}*pips',  # tp1 3pips, tp 1 3pips format
+    ],
+
+    'stop_loss_pips': [
+        rf'\bSL{SPACE}+(\d+){SPACE}*pips',                              # SL 20pips format
+        rf'\bsl{SPACE}+(\d+){SPACE}*pips',                              # sl 20pips format
+        rf'stop\W*loss{SPACE}+(\d+){SPACE}*pips',                       # Stop Loss 20pips format
     ]
 }
 
@@ -94,6 +110,12 @@ class PatternMatcher:
             'Gold': 'XAUUSD',
             'XAU/USD': 'XAUUSD',
             'XAUUSD': 'XAUUSD',
+            'SILVER': 'XAGUSD',
+            'Silver': 'XAGUSD',
+            'Slver': 'XAGUSD',   # Common typo (missing 'i')
+            'SLVER': 'XAGUSD',   # Common typo (missing 'i')
+            'XAG/USD': 'XAGUSD',
+            'XAGUSD': 'XAGUSD',
             'EUR/USD': 'EURUSD',
             'EURUSD': 'EURUSD',
             'GBP/USD': 'GBPUSD',
@@ -256,7 +278,7 @@ class PatternMatcher:
 
     def extract_take_profits_pips(self, text: str) -> Optional[Tuple[int, Optional[int]]]:
         """
-        Extract take profit in pips format from text
+        Extract take profit in pips format from text (range or single value)
 
         Args:
             text: Message text
@@ -279,6 +301,49 @@ class PatternMatcher:
                     pips = int(match.group(1))
                     logger.debug(f"Extracted TP pips: {pips}")
                     return (pips, None)
+        return None
+
+    def extract_take_profits_pips_numbered(self, text: str) -> List[Tuple[int, int]]:
+        """
+        Extract numbered take profits in pips format (tp1 3pips, tp2 4pips, etc.)
+
+        Args:
+            text: Message text
+
+        Returns:
+            List of tuples (tp_number, pips), sorted by tp_number
+        """
+        tps = []
+
+        for pattern in UNIFIED_PATTERNS['take_profit_pips_numbered']:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                tp_num = int(match.group(1))
+                tp_pips = int(match.group(2))
+                tps.append((tp_num, tp_pips))
+                logger.debug(f"Extracted TP{tp_num}: {tp_pips} pips")
+
+        # Sort by TP number
+        tps.sort(key=lambda x: x[0])
+
+        return tps
+
+    def extract_stop_loss_pips(self, text: str) -> Optional[int]:
+        """
+        Extract stop loss in pips format from text
+
+        Args:
+            text: Message text
+
+        Returns:
+            Stop loss in pips or None
+        """
+        for pattern in UNIFIED_PATTERNS['stop_loss_pips']:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                pips = int(match.group(1))
+                logger.debug(f"Extracted SL pips: {pips}")
+                return pips
         return None
 
     def is_signal(self, text: str) -> bool:

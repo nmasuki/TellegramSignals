@@ -138,6 +138,7 @@ class ConfigManager:
                         'take_profit_4',
                         'confidence_score',
                         'raw_message',
+                        'created_at',
                         'extracted_at'
                     ]
                 },

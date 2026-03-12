@@ -1,5 +1,6 @@
 """Signal extractor - coordinates pattern matching and validation"""
 import logging
+import re
 from datetime import datetime
 from typing import Optional, Dict, Any
 
@@ -96,25 +97,73 @@ class SignalExtractor:
         extracted_fields['entry_price_min'] = entry_min
         extracted_fields['entry_price_max'] = entry_max
 
-        # Stop Loss
-        stop_loss = self.pattern_matcher.extract_stop_loss(text)
+        # Check for "now" keyword indicating immediate market execution
+        is_market_order = bool(re.search(r'\bnow\b', text, re.IGNORECASE))
+        extracted_fields['is_market_order'] = is_market_order
+
+        # Stop Loss - try pips format first, then absolute values
+        stop_loss = None
+        sl_pips = self.pattern_matcher.extract_stop_loss_pips(text)
+        if sl_pips:
+            # Calculate SL price from pips
+            entry_ref = entry_single or ((entry_min + entry_max) / 2 if entry_min and entry_max else None)
+            if entry_ref and direction:
+                stop_loss = self._calculate_sl_from_pips(entry_ref, direction, sl_pips, symbol)
+                logger.debug(f"Calculated SL from pips: {stop_loss} ({sl_pips} pips)")
+        else:
+            # Try absolute SL value
+            stop_loss = self.pattern_matcher.extract_stop_loss(text)
+
         extracted_fields['stop_loss'] = stop_loss
+        extracted_fields['sl_pips'] = sl_pips
 
-        # Take Profits
-        tp_list = self.pattern_matcher.extract_take_profits(text)
-        take_profits = [tp_price for _, tp_price in tp_list]
+        # Take Profits - try pips formats first, then absolute values
+        take_profits = []
+        entry_ref = entry_single or ((entry_min + entry_max) / 2 if entry_min and entry_max else None)
 
-        # If no absolute TPs found, try TP pips format
-        if not take_profits:
+        # Try numbered pips format first (tp1 3pips, tp2 4pips, etc.)
+        tp_pips_numbered = self.pattern_matcher.extract_take_profits_pips_numbered(text)
+        if tp_pips_numbered and entry_ref and direction:
+            # Calculate TP prices from numbered pips list
+            take_profits = self._calculate_tp_from_pips_list(
+                entry_ref, direction, tp_pips_numbered, symbol
+            )
+            logger.debug(f"Calculated TPs from numbered pips: {take_profits} ({tp_pips_numbered})")
+        else:
+            # Try range pips format (TP 30-100pips)
             tp_pips = self.pattern_matcher.extract_take_profits_pips(text)
             if tp_pips:
-                # Calculate TP prices from pips
-                entry_ref = entry_single or (entry_min + entry_max) / 2 if entry_min and entry_max else None
+                # Calculate TP prices from pips range
                 if entry_ref and direction:
                     take_profits = self._calculate_tp_from_pips(
                         entry_ref, direction, tp_pips, symbol
                     )
-                    logger.debug(f"Calculated TPs from pips: {take_profits}")
+                    logger.debug(f"Calculated TPs from pips: {take_profits} ({tp_pips} pips)")
+            else:
+                # Try absolute TP values
+                tp_list = self.pattern_matcher.extract_take_profits(text)
+                take_profits = [tp_price for _, tp_price in tp_list]
+
+        # Resolve truncated prices (e.g., "90" instead of "5190")
+        entry_single, entry_min, entry_max, stop_loss, take_profits = self._resolve_truncated_prices(
+            symbol=symbol,
+            entry_single=entry_single,
+            entry_min=entry_min,
+            entry_max=entry_max,
+            stop_loss=stop_loss,
+            take_profits=take_profits,
+        )
+        extracted_fields['entry_price'] = entry_single
+        extracted_fields['entry_price_min'] = entry_min
+        extracted_fields['entry_price_max'] = entry_max
+        extracted_fields['stop_loss'] = stop_loss
+
+        # Auto-correct typos in TP values
+        entry_ref = entry_single or ((entry_min + entry_max) / 2 if entry_min and entry_max else None)
+        if entry_ref and take_profits:
+            take_profits, tp_corrections = self._auto_correct_typos(take_profits, entry_ref)
+            if tp_corrections:
+                logger.info(f"Auto-corrected TPs: {tp_corrections}")
 
         extracted_fields['take_profits'] = take_profits
 
@@ -191,9 +240,12 @@ class SignalExtractor:
         Returns:
             Pip value in price terms
         """
-        # Gold/XAUUSD: 1 pip = 0.1
+        # Gold/XAUUSD: 1 pip = 1.0 (common for signal providers)
         if symbol in ('XAUUSD', 'GOLD'):
-            return 0.1
+            return 1.0
+        # Silver/XAGUSD: 1 pip = 0.01
+        if symbol in ('XAGUSD', 'SILVER'):
+            return 0.01
         # JPY pairs: 1 pip = 0.01
         if 'JPY' in symbol:
             return 0.01
@@ -237,6 +289,67 @@ class SignalExtractor:
 
         return take_profits
 
+    def _calculate_tp_from_pips_list(
+        self,
+        entry_price: float,
+        direction: str,
+        tp_pips_list: list,
+        symbol: str
+    ) -> list:
+        """
+        Calculate TP prices from a list of numbered pips values
+
+        Args:
+            entry_price: Entry price for the trade
+            direction: "BUY" or "SELL"
+            tp_pips_list: List of tuples (tp_number, pips)
+            symbol: Trading symbol
+
+        Returns:
+            List of calculated TP prices (sorted by TP number)
+        """
+        pip_value = self._get_pip_value(symbol or 'XAUUSD')
+        take_profits = []
+
+        for _, pips in tp_pips_list:
+            if direction == 'BUY':
+                # BUY: TPs are above entry
+                tp_price = round(entry_price + pips * pip_value, 2)
+            else:
+                # SELL: TPs are below entry
+                tp_price = round(entry_price - pips * pip_value, 2)
+            take_profits.append(tp_price)
+
+        return take_profits
+
+    def _calculate_sl_from_pips(
+        self,
+        entry_price: float,
+        direction: str,
+        sl_pips: int,
+        symbol: str
+    ) -> float:
+        """
+        Calculate SL price from pips
+
+        Args:
+            entry_price: Entry price for the trade
+            direction: "BUY" or "SELL"
+            sl_pips: Stop loss in pips
+            symbol: Trading symbol
+
+        Returns:
+            Calculated SL price
+        """
+        pip_value = self._get_pip_value(symbol or 'XAUUSD')
+
+        if direction == 'BUY':
+            # BUY: SL is below entry
+            return round(entry_price - sl_pips * pip_value, 2)
+        else:
+            # SELL: SL is above entry
+            return round(entry_price + sl_pips * pip_value, 2)
+
     def _calculate_confidence(self, extracted_fields: Dict[str, Any], channel_username: str = None) -> float:
         """
         Calculate confidence score for extracted fields
@@ -258,11 +371,12 @@ class SignalExtractor:
         if extracted_fields.get('direction'):
             score += self.confidence_weights.get('direction', 0.20)
 
-        # Entry (single or range)
+        # Entry (single or range, or "now" = market order)
         if extracted_fields.get('entry_price') or (
             extracted_fields.get('entry_price_min') and
             extracted_fields.get('entry_price_max')
-        ):
+        ) or extracted_fields.get('is_market_order'):
+            # "now" signals get full entry confidence (market execution)
             score += self.confidence_weights.get('entry', 0.15)
 
         # Stop Loss
@@ -401,6 +515,256 @@ class SignalExtractor:
                     logger.warning(notes)
 
         return direction, round(confidence, 2), notes
+
+    # Typical price ranges per symbol (approximate, used as fallback for truncated price detection)
+    SYMBOL_PRICE_RANGES = {
+        'XAUUSD': (1800, 10000),
+        'XAGUSD': (15, 100),
+        'EURUSD': (0.8, 1.5),
+        'GBPUSD': (1.0, 2.0),
+        'USDJPY': (100, 200),
+        'BTCUSD': (10000, 200000),
+        'AUDUSD': (0.5, 1.0),
+        'USDCAD': (1.0, 1.6),
+        'NZDUSD': (0.5, 0.9),
+        'USDCHF': (0.8, 1.2),
+    }
+
+    def _resolve_truncated_prices(
+        self,
+        symbol: str,
+        entry_single: float,
+        entry_min: float,
+        entry_max: float,
+        stop_loss: float,
+        take_profits: list,
+    ) -> tuple:
+        """
+        Resolve truncated prices where only the last few digits are given.
+
+        For example, if XAUUSD is around 3200 and signal says "buy 90",
+        the actual entry is likely 3190 or 3290. Uses other prices in the
+        signal or the symbol's typical range as reference.
+
+        Returns:
+            Tuple of (entry_single, entry_min, entry_max, stop_loss, take_profits)
+        """
+        # Collect all non-None prices to find a "full" reference
+        all_prices = []
+        if entry_single:
+            all_prices.append(entry_single)
+        if entry_min:
+            all_prices.append(entry_min)
+        if entry_max:
+            all_prices.append(entry_max)
+        if stop_loss:
+            all_prices.append(stop_loss)
+        for tp in (take_profits or []):
+            if tp:
+                all_prices.append(tp)
+
+        if not all_prices:
+            return entry_single, entry_min, entry_max, stop_loss, take_profits
+
+        # Determine expected magnitude from symbol
+        expected_min, expected_max = self.SYMBOL_PRICE_RANGES.get(
+            symbol or '', (0, 0)
+        )
+        if expected_min == 0:
+            return entry_single, entry_min, entry_max, stop_loss, take_profits
+
+        # Find a "full" reference price (one that's within expected range)
+        reference = None
+        for p in all_prices:
+            if expected_min * 0.5 <= p <= expected_max * 2:
+                reference = p
+                break
+
+        # If no full reference found, use midpoint of expected range
+        if reference is None:
+            reference = (expected_min + expected_max) / 2
+            # Only proceed if ALL prices look truncated
+            if any(expected_min * 0.5 <= p <= expected_max * 2 for p in all_prices):
+                return entry_single, entry_min, entry_max, stop_loss, take_profits
+
+        def resolve(price):
+            if price is None:
+                return None
+            if expected_min * 0.5 <= price <= expected_max * 2:
+                return price  # Already full price
+            if price >= expected_max * 2:
+                return price  # Too high to be truncated, leave as-is
+            return self._expand_truncated(price, reference)
+
+        new_entry_single = resolve(entry_single)
+        new_entry_min = resolve(entry_min)
+        new_entry_max = resolve(entry_max)
+        new_stop_loss = resolve(stop_loss)
+        new_take_profits = [resolve(tp) for tp in (take_profits or [])]
+
+        # Log corrections
+        corrections = []
+        if new_entry_single != entry_single and entry_single is not None:
+            corrections.append(f"entry: {entry_single} -> {new_entry_single}")
+        if new_entry_min != entry_min and entry_min is not None:
+            corrections.append(f"entry_min: {entry_min} -> {new_entry_min}")
+        if new_entry_max != entry_max and entry_max is not None:
+            corrections.append(f"entry_max: {entry_max} -> {new_entry_max}")
+        if new_stop_loss != stop_loss and stop_loss is not None:
+            corrections.append(f"SL: {stop_loss} -> {new_stop_loss}")
+        for i, (old, new) in enumerate(zip(take_profits or [], new_take_profits)):
+            if old != new and old is not None:
+                corrections.append(f"TP{i+1}: {old} -> {new}")
+
+        if corrections:
+            logger.info(f"Resolved truncated prices: {', '.join(corrections)}")
+
+        return new_entry_single, new_entry_min, new_entry_max, new_stop_loss, new_take_profits
+
+    @staticmethod
+    def _expand_truncated(truncated: float, reference: float) -> float:
+        """
+        Expand a truncated price using a reference price.
+
+        E.g., truncated=90, reference=3190 -> 3190 (or 3090, 3290)
+        Picks the candidate closest to the reference.
+
+        Args:
+            truncated: The truncated price (e.g., 90)
+            reference: A full reference price (e.g., 3190)
+
+        Returns:
+            The expanded price
+        """
+        import math
+
+        if truncated <= 0 or reference <= 0:
+            return truncated
+
+        trunc_digits = len(str(int(truncated)))
+        ref_digits = len(str(int(reference)))
+
+        if trunc_digits >= ref_digits:
+            return truncated  # Not actually truncated
+
+        # The truncated value represents the last N digits
+        # e.g., truncated=90, reference=3190
+        # We want to try: 3090, 3190, 3290 and pick closest to reference
+        modulus = 10 ** trunc_digits  # e.g., 100
+        prefix = int(reference) // modulus  # e.g., 31
+
+        candidates = []
+        for offset in [-1, 0, 1]:
+            candidate_prefix = prefix + offset
+            if candidate_prefix < 0:
+                continue
+            candidate = candidate_prefix * modulus + int(truncated)
+            # Preserve decimal part if any
+            decimal_part = truncated - int(truncated)
+            candidate = float(candidate) + decimal_part
+            candidates.append(candidate)
+
+        # Pick closest to reference
+        best = min(candidates, key=lambda c: abs(c - reference))
+        return round(best, 2)
+
+    def _auto_correct_typos(
+        self,
+        take_profits: list,
+        entry_price: float
+    ) -> tuple:
+        """
+        Auto-correct typos in TP values (extra/missing digits).
+
+        Args:
+            take_profits: List of TP prices
+            entry_price: Entry price for reference
+
+        Returns:
+            Tuple of (corrected_tps, corrections_made)
+            corrections_made is a list of strings describing corrections
+        """
+        import math
+
+        if len(take_profits) < 2:
+            return take_profits, []
+
+        corrected = list(take_profits)
+        corrections = []
+
+        # Get expected digit count from entry
+        entry_digits = int(math.log10(entry_price)) + 1 if entry_price > 0 else 0
+
+        for i, tp in enumerate(take_profits):
+            if tp <= 0:
+                continue
+
+            tp_digits = int(math.log10(tp)) + 1
+
+            # Check if magnitude is wrong (different digit count)
+            if abs(tp_digits - entry_digits) >= 1:
+                ratio = tp / entry_price
+
+                # If clearly wrong magnitude (10x or 0.1x off)
+                if ratio > 5 or ratio < 0.2:
+                    # Try to find correction
+                    best_correction = self._find_best_correction(
+                        tp, entry_price, take_profits, i
+                    )
+                    if best_correction:
+                        corrected[i] = best_correction
+                        corrections.append(f"TP{i+1}: {tp} -> {best_correction}")
+
+        return corrected, corrections
+
+    def _find_best_correction(
+        self,
+        value: float,
+        entry_price: float,
+        all_values: list,
+        index: int
+    ) -> float:
+        """
+        Find the best correction for a mistyped value.
+
+        Args:
+            value: The potentially wrong value
+            entry_price: Entry price for reference
+            all_values: All TP values for context
+            index: Index of the value being corrected
+
+        Returns:
+            Corrected value, or None if can't determine
+        """
+        # Get other values for reference
+        others = [v for i, v in enumerate(all_values) if i != index and v > 0]
+
+        candidates = []
+
+        # Try multiplying/dividing by powers of 10
+        for factor in [10, 100, 0.1, 0.01]:
+            if factor >= 1:
+                corrected = value * factor  # Missing digit
+            else:
+                corrected = value / (1 / factor)  # Extra digit
+
+            # Check if corrected value has right magnitude
+            ratio = corrected / entry_price if entry_price else 0
+            if 0.5 < ratio < 2:
+                # Score by how well it fits with other TPs
+                if others:
+                    avg_distance = sum(abs(v - entry_price) for v in others) / len(others)
+                    corrected_distance = abs(corrected - entry_price)
+                    score = abs(corrected_distance - avg_distance) / avg_distance if avg_distance else float('inf')
+                    candidates.append((corrected, score))
+                else:
+                    candidates.append((corrected, abs(ratio - 1)))
+
+        if candidates:
+            best = min(candidates, key=lambda x: x[1])
+            return round(best[0], 2)
+
+        return None
 
     def create_extraction_error(
         self,

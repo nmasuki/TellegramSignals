@@ -109,7 +109,7 @@ The extracted signals are saved in CSV format with these columns:
 | confidence_score | Extraction confidence (0.0-1.0) |
 | raw_message | Original message text |
 | extraction_notes | Any warnings or notes |
-| extracted_at | Extraction timestamp |
+| created_at | Extraction timestamp |
 
 ### extraction_errors.jsonl
 
