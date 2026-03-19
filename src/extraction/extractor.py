@@ -97,8 +97,9 @@ class SignalExtractor:
         extracted_fields['entry_price_min'] = entry_min
         extracted_fields['entry_price_max'] = entry_max
 
-        # Check for "now" keyword indicating immediate market execution
-        is_market_order = bool(re.search(r'\bnow\b', text, re.IGNORECASE))
+        # Mark as market order if "now" keyword found, or if no entry price extracted
+        has_explicit_entry = entry_single is not None or (entry_min is not None and entry_max is not None)
+        is_market_order = bool(re.search(r'\bnow\b', text, re.IGNORECASE)) or not has_explicit_entry
         extracted_fields['is_market_order'] = is_market_order
 
         # Stop Loss - try pips format first, then absolute values
@@ -187,6 +188,12 @@ class SignalExtractor:
         )
         extracted_fields['direction'] = direction  # Update in case it was corrected
 
+        # If no entry price found, mark as market order (use current market price)
+        has_entry = entry_single is not None or (entry_min is not None and entry_max is not None)
+        is_market_order = extracted_fields.get('is_market_order', False) or not has_entry
+        if is_market_order and not has_entry:
+            logger.info(f"No entry price found for {symbol} {direction}, will use market price")
+
         # Create signal object
         signal = Signal(
             message_id=message_id,
@@ -199,6 +206,7 @@ class SignalExtractor:
             entry_price_max=entry_max,
             stop_loss=stop_loss,
             take_profits=take_profits,
+            is_market_order=is_market_order,
             confidence_score=confidence,
             raw_message=text
         )
@@ -217,16 +225,22 @@ class SignalExtractor:
             else:
                 signal.extraction_notes = f"Validation warning: {e}"
 
-        # Check confidence threshold
+        # Mark low-confidence signals instead of raising - they'll be shown but not executed
         if confidence < self.min_confidence:
-            raise ValueError(
-                f"Confidence score ({confidence:.2f}) below threshold ({self.min_confidence})"
+            signal.execution_status = "LOW_CONF"
+            if signal.extraction_notes:
+                signal.extraction_notes += f"; Confidence {confidence:.2f} below {self.min_confidence}"
+            else:
+                signal.extraction_notes = f"Confidence {confidence:.2f} below {self.min_confidence}"
+            logger.info(
+                f"Low confidence signal: {signal.symbol} {signal.direction} "
+                f"(confidence: {confidence:.2f} < {self.min_confidence})"
             )
-
-        logger.info(
-            f"Extracted signal: {signal.symbol} {signal.direction} "
-            f"(confidence: {confidence:.2f})"
-        )
+        else:
+            logger.info(
+                f"Extracted signal: {signal.symbol} {signal.direction} "
+                f"(confidence: {confidence:.2f})"
+            )
 
         return signal
 
@@ -249,6 +263,9 @@ class SignalExtractor:
         # JPY pairs: 1 pip = 0.01
         if 'JPY' in symbol:
             return 0.01
+        # Indices (US30, etc.): 1 pip = 1.0
+        if symbol in ('US30', 'DJ30'):
+            return 1.0
         # Standard forex pairs: 1 pip = 0.0001
         return 0.0001
 
@@ -523,6 +540,8 @@ class SignalExtractor:
         'EURUSD': (0.8, 1.5),
         'GBPUSD': (1.0, 2.0),
         'USDJPY': (100, 200),
+        'GBPJPY': (150, 250),
+        'US30': (25000, 50000),
         'BTCUSD': (10000, 200000),
         'AUDUSD': (0.5, 1.0),
         'USDCAD': (1.0, 1.6),

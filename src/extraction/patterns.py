@@ -6,12 +6,22 @@ from typing import List, Optional, Tuple, Dict
 
 logger = logging.getLogger(__name__)
 
+# Subscript/superscript digit mapping → regular digits
+_SCRIPT_MAP = str.maketrans('₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹', '01234567890123456789')
+
+
+def _to_int(s: str) -> int:
+    """Convert a string that may contain subscript/superscript digits to an int."""
+    return int(s.translate(_SCRIPT_MAP))
+
 
 # Unicode character classes for common Telegram message variants
 DASH = r'[-–—−]'  # hyphen-minus, en-dash, em-dash, minus sign
 COLON = r'[:：]'  # regular colon, fullwidth colon
 AT_SIGN = r'[@＠]'  # regular @, fullwidth @
 SPACE = r'[\s\u00A0]'  # whitespace including non-breaking space
+# regular digits + subscript ₀-₉ + superscript ⁰¹²³⁴⁵⁶⁷⁸⁹
+DIGIT = r'[\d\u2080-\u2089\u2070\u00B9\u00B2\u00B3\u2074-\u2079]'
 
 
 # Unified pattern set that handles both Nick Alpha Trader and Gary Gold Legacy formats
@@ -22,7 +32,9 @@ UNIFIED_PATTERNS = {
         r'\b(XAU/?USD)\b',
         r'\b(SILVER|Silver|Slver|SLVER)\b',  # Silver including common typo
         r'\b(XAG/?USD)\b',
-        r'\b([A-Z]{3}/?[A-Z]{3})\b',
+        r'\b(US30|DJ30|DOW|Dow\s*Jones)\b',  # US30 / Dow Jones index
+        # Match only valid currency code pairs (not random words like PUBLIC, EASYYY)
+        r'\b((?:EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY|BTC|ETH)/?(?:EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY|BTC|ETH))\b',
     ],
 
     'direction': [
@@ -58,12 +70,12 @@ UNIFIED_PATTERNS = {
     ],
 
     'take_profit': [
-        rf'tp{SPACE}*(\d){COLON}{SPACE}*(\d+\.?\d*)',         # tp1: 5085 format (single digit + colon)
-        rf'tp{SPACE}*(\d){SPACE}+(\d{{3,}}\.?\d*)',           # tp 1 5085 format (single digit + space + 3+ digit price)
-        rf'target{SPACE}*(\d){COLON}?{SPACE}*(\d{{3,}}\.?\d*)',  # target1: 5085 formats
-        rf'\bT{SPACE}*(\d){COLON}{SPACE}*(\d+\.?\d*)',        # T1: 5085 format (single digit + colon)
-        rf'\bT{SPACE}*(\d){SPACE}+(\d{{3,}}\.?\d*)',          # T 1 5085 format (single digit + space + 3+ digit price)
-        rf'take\W*profit{SPACE}*(\d){COLON}?{SPACE}*(\d{{3,}}\.?\d*)',  # Take Profit 1: 5085 formats
+        rf'tp{SPACE}*({DIGIT}){COLON}{SPACE}*(\d+\.?\d*)',         # tp1: 5085, tp₁: 5085 format
+        rf'tp{SPACE}*({DIGIT}){SPACE}+(\d{{3,}}\.?\d*)',           # tp 1 5085, tp₁ 5085 format
+        rf'target{SPACE}*({DIGIT}){COLON}?{SPACE}*(\d{{3,}}\.?\d*)',  # target1: 5085 formats
+        rf'\bT{SPACE}*({DIGIT}){COLON}{SPACE}*(\d+\.?\d*)',        # T1: 5085, T₁: 5085 format
+        rf'\bT{SPACE}*({DIGIT}){SPACE}+(\d{{3,}}\.?\d*)',          # T 1 5085, T₁ 5085 format
+        rf'take\W*profit{SPACE}*({DIGIT}){COLON}?{SPACE}*(\d{{3,}}\.?\d*)',  # Take Profit 1: 5085
     ],
 
     'take_profit_single': [
@@ -71,11 +83,12 @@ UNIFIED_PATTERNS = {
         rf'\btarget{COLON}{SPACE}*(\d+\.?\d*)',     # target: 1234 format
         rf'\bT{COLON}{SPACE}*(\d+\.?\d*)',          # T: 1234 format
         rf'take\W*profit{SPACE}*{COLON}?{SPACE}*(\d+\.?\d*)',  # Take Profit: 1234, TakeProfit 1234 formats
+        rf'\bTP\.?{SPACE}+(\d{{3,}}\.?\d*)',        # TP. 4835, TP 4835 (no number, dot optional)
     ],
 
     'stop_loss_numbered': [
-        rf'stop{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',    # stop1:, stop 1, stop1 5073 formats
-        rf'\bSL{SPACE}*(\d+){COLON}?{SPACE}*(\d+\.?\d*)',    # SL1:, SL 1, SL1 5073 formats
+        rf'stop{SPACE}*({DIGIT}+){COLON}?{SPACE}*(\d+\.?\d*)',    # stop1:, stop₁ 5073 formats
+        rf'\bSL{SPACE}*({DIGIT}+){COLON}?{SPACE}*(\d+\.?\d*)',    # SL1:, SL₁ 5073 formats
     ],
 
     'take_profit_pips': [
@@ -84,14 +97,53 @@ UNIFIED_PATTERNS = {
     ],
 
     'take_profit_pips_numbered': [
-        rf'\btp{SPACE}*(\d){SPACE}+(\d+){SPACE}*pips',  # tp1 3pips, tp 1 3pips format
+        rf'\btp{SPACE}*({DIGIT}){SPACE}+(\d+){SPACE}*pips',  # tp1 3pips, tp₁ 3pips format
     ],
 
     'stop_loss_pips': [
         rf'\bSL{SPACE}+(\d+){SPACE}*pips',                              # SL 20pips format
         rf'\bsl{SPACE}+(\d+){SPACE}*pips',                              # sl 20pips format
         rf'stop\W*loss{SPACE}+(\d+){SPACE}*pips',                       # Stop Loss 20pips format
-    ]
+    ],
+
+    'close_signal': [
+        r'\bclose\s+all\b',                                             # "close all"
+        r'\bclose\s+all\s+(?:trades?|positions?|orders?)\b',            # "close all trades/positions"
+        r'\bclose\s+(?:trades?|positions?|orders?)\b',                  # "close trades/positions"
+        r'\bexit\s+all\b',                                              # "exit all"
+        r'\bexit\s+(?:trades?|positions?)\b',                           # "exit trades/positions"
+        r'\bclose\s+(?:it|now|here)\b',                                 # "close it", "close now"
+        r'\bclose\s+(?:buy|sell)\b',                                    # "close buy", "close sell"
+        r'\bbook\s+profit\b',                                           # "book profit"
+        r'\btake\s+profit\s+now\b',                                     # "take profit now"
+        r'\bready\s+for\s+next\b',                                      # "ready for next" (implies close)
+    ],
+
+    'break_even': [
+        r'\bmove\s+(?:sl|stop\s*loss?)\s+(?:to\s+)?(?:be|break\s*even|entry)\b',  # "move SL to BE"
+        r'\bset\s+(?:sl|stop\s*loss?)\s+(?:to\s+)?(?:be|break\s*even|entry)\b',   # "set SL to BE"
+        r'\b(?:sl|stop\s*loss?)\s+(?:to\s+)?(?:be|break\s*even|entry)\b',          # "SL to BE"
+        r'\bbreak\s*even\b',                                                        # "break even" / "breakeven"
+        r'\bsecure\s+(?:entry|position|trade)\b',                                   # "secure entry"
+    ],
+
+    'tp_hit': [
+        r'\btp\s*\d?\s+(?:hit|done|reached|touched|secured)\b',         # "TP1 hit", "TP done"
+        r'\b(?:hit|done|reached|touched|secured)\s+tp\s*\d?\b',         # "hit TP1", "done TP"
+        r'\btp\s+hit\s+\d+\s*pips?\b',                                  # "TP Hit 150 pips"
+        r'\brunning\s+\d+\s*pips?\b',                                   # "running 100 pips"
+        r'\b\d+\s*pips?\s*(?:profit|done|secured|running)\b',           # "100 pips profit"
+    ],
+
+    'partial_close': [
+        r'\bsecured?\s+(?:your\s+)?profit\s+higher\b',                  # "secured your profit higher entry"
+        r'\bclose\s+higher\s+(?:entry|entries|positions?)\b',            # "close higher entries"
+        r'\bhold\s+(?:lowest|lower|last)\s+(?:entry|entries|positions?)\b',  # "hold lowest entry"
+        r'\bcollect\s+(?:fast\s+)?(?:money|profit)\b',                   # "collect fast money"
+        r'\bpartial\s+close\b',                                          # "partial close"
+        r'\bclose\s+(?:partial|some|half)\b',                            # "close partial/some/half"
+        r'\bsecure\s+(?:your\s+)?profit\b',                             # "secure your profit"
+    ],
 }
 
 
@@ -120,6 +172,14 @@ class PatternMatcher:
             'EURUSD': 'EURUSD',
             'GBP/USD': 'GBPUSD',
             'GBPUSD': 'GBPUSD',
+            'USD/JPY': 'USDJPY',
+            'USDJPY': 'USDJPY',
+            'GBP/JPY': 'GBPJPY',
+            'GBPJPY': 'GBPJPY',
+            'US30': 'US30',
+            'DJ30': 'US30',
+            'DOW': 'US30',
+            'Dow Jones': 'US30',
             'BTC/USD': 'BTCUSD',
             'BTCUSD': 'BTCUSD',
         }
@@ -257,19 +317,22 @@ class PatternMatcher:
         for pattern in UNIFIED_PATTERNS['take_profit']:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
-                tp_num = int(match.group(1))
+                tp_num = _to_int(match.group(1))
                 tp_price = float(match.group(2))
                 tps.append((tp_num, tp_price))
                 logger.debug(f"Extracted TP{tp_num}: {tp_price}")
 
-        # If no numbered TPs found, try single TP patterns (tp:, target:, T:)
+        # If no numbered TPs found, try single TP patterns (tp:, target:, TP. price)
+        # Each pattern is tried; break on first pattern that yields matches
         if not tps:
             for pattern in UNIFIED_PATTERNS['take_profit_single']:
-                matches = re.finditer(pattern, text, re.IGNORECASE)
-                for i, match in enumerate(matches, start=1):
-                    tp_price = float(match.group(1))
-                    tps.append((i, tp_price))
-                    logger.debug(f"Extracted TP{i}: {tp_price} (from single pattern)")
+                found = list(re.finditer(pattern, text, re.IGNORECASE))
+                if found:
+                    for i, match in enumerate(found, start=1):
+                        tp_price = float(match.group(1))
+                        tps.append((i, tp_price))
+                        logger.debug(f"Extracted TP{i}: {tp_price} (from single pattern)")
+                    break  # Use first matching pattern only
 
         # Sort by TP number
         tps.sort(key=lambda x: x[0])
@@ -318,7 +381,7 @@ class PatternMatcher:
         for pattern in UNIFIED_PATTERNS['take_profit_pips_numbered']:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
-                tp_num = int(match.group(1))
+                tp_num = _to_int(match.group(1))
                 tp_pips = int(match.group(2))
                 tps.append((tp_num, tp_pips))
                 logger.debug(f"Extracted TP{tp_num}: {tp_pips} pips")
@@ -345,6 +408,51 @@ class PatternMatcher:
                 logger.debug(f"Extracted SL pips: {pips}")
                 return pips
         return None
+
+    def is_close_signal(self, text: str) -> bool:
+        """Check if message is a close/exit signal."""
+        text_lower = text.lower()
+        # Must contain a close-related keyword
+        close_keywords = ['close', 'exit', 'book profit', 'ready for next']
+        if not any(kw in text_lower for kw in close_keywords):
+            return False
+        for pattern in UNIFIED_PATTERNS.get('close_signal', []):
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+
+    def is_break_even_signal(self, text: str) -> bool:
+        """Check if message is a break-even signal."""
+        for pattern in UNIFIED_PATTERNS.get('break_even', []):
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+
+    def is_tp_hit_signal(self, text: str) -> bool:
+        """Check if message indicates a take profit was hit."""
+        for pattern in UNIFIED_PATTERNS.get('tp_hit', []):
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+
+    def is_partial_close_signal(self, text: str) -> bool:
+        """Check if message is a partial close signal (close some, hold rest)."""
+        for pattern in UNIFIED_PATTERNS.get('partial_close', []):
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+
+    def extract_close_direction(self, text: str) -> Optional[str]:
+        """Extract if close is for a specific direction (BUY/SELL) or all."""
+        if re.search(r'\bclose\s+buy\b', text, re.IGNORECASE):
+            return 'BUY'
+        if re.search(r'\bclose\s+sell\b', text, re.IGNORECASE):
+            return 'SELL'
+        return None  # Close all directions
+
+    def extract_close_symbol(self, text: str) -> Optional[str]:
+        """Extract if close is for a specific symbol."""
+        return self.extract_symbol(text)
 
     def is_signal(self, text: str) -> bool:
         """

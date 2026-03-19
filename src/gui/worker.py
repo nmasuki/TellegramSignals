@@ -3,7 +3,7 @@ import asyncio
 import logging
 from PySide6.QtCore import QThread, Signal, QEventLoop
 from PySide6.QtWidgets import QInputDialog
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from src.telegram.client import TelegramListener
 from src.extraction.extractor import SignalExtractor
@@ -11,6 +11,7 @@ from src.storage.csv_writer import CSVWriter
 from src.storage.error_logger import ErrorLogger
 from src.server.signal_store import SignalStore
 from src.server.signal_server import SignalServer
+from src.trading.mt5_executor import MT5Executor
 
 
 class BackgroundWorker(QThread):
@@ -19,6 +20,7 @@ class BackgroundWorker(QThread):
     # Signals for thread-safe communication with GUI
     status_changed = Signal(str)  # Status: connected, warning, error, stopped
     signal_extracted = Signal(dict)  # Signal data
+    signal_status_updated = Signal(int, str)  # message_id, execution_status
     error_occurred = Signal(str, str)  # Error message, level
     message_received = Signal(str, str)  # Channel, message preview
     stats_updated = Signal(dict)  # Statistics dictionary
@@ -56,6 +58,7 @@ class BackgroundWorker(QThread):
         self.error_logger = None
         self.signal_store = None
         self.signal_server = None
+        self.mt5_executor = None
 
         # Track processed messages to avoid duplicates (message_id -> content hash)
         self._processed_messages = {}
@@ -136,6 +139,9 @@ class BackgroundWorker(QThread):
                 self.signal_server.stop()
                 self.log_message.emit("Signal server stopped", "info")
 
+            if self.mt5_executor:
+                self.mt5_executor.disconnect()
+
             if self.telegram_client:
                 await self.telegram_client.disconnect()
 
@@ -189,6 +195,21 @@ class BackgroundWorker(QThread):
         self.log_message.emit(f"Signal server started on port {server_port}", "success")
         self.logger.info(f"Signal server started on http://0.0.0.0:{server_port}")
 
+        # Initialize MT5 trade executor
+        trading_config = self.config.get('trading', {})
+        self.mt5_executor = MT5Executor(trading_config)
+        if self.mt5_executor.enabled:
+            if self.mt5_executor.connect():
+                self.logger.info("MT5 trade executor connected")
+                self.log_message.emit("MT5 trade executor connected", "success")
+            else:
+                self.logger.warning("MT5 trade executor failed to connect - trades will not be executed")
+                self.log_message.emit("MT5 executor failed to connect", "warning")
+            # Share executor with signal server for stats/positions
+            self.signal_server.set_executor(self.mt5_executor)
+        else:
+            self.logger.info("MT5 trade executor disabled")
+
     async def on_new_message(self, message, chat):
         """Handle new message from Telegram"""
         try:
@@ -203,6 +224,62 @@ class BackgroundWorker(QThread):
             # Emit message received
             preview = message_text[:50] + "..." if len(message_text) > 50 else message_text
             self.message_received.emit(channel_username, preview)
+
+            # Check for close/break-even/partial-close signals first
+            is_close = self.signal_extractor.pattern_matcher.is_close_signal(message_text)
+            is_be = self.signal_extractor.pattern_matcher.is_break_even_signal(message_text)
+            is_tp_hit = self.signal_extractor.pattern_matcher.is_tp_hit_signal(message_text)
+            is_partial = self.signal_extractor.pattern_matcher.is_partial_close_signal(message_text)
+
+            if is_close or is_be or is_tp_hit or is_partial:
+                close_dir = self.signal_extractor.pattern_matcher.extract_close_direction(message_text)
+                close_sym = self.signal_extractor.pattern_matcher.extract_close_symbol(message_text)
+
+                if self.mt5_executor and self.mt5_executor.enabled:
+                    if is_partial and is_be:
+                        # Partial close + BE: close higher entries, BE on lowest
+                        closed, be_count = self.mt5_executor.partial_close_positions(
+                            channel_username=channel_username, symbol=close_sym
+                        )
+                        action = f"Partial close: {closed} closed, {be_count} moved to BE"
+                        self.log_message.emit(action, "success" if closed + be_count > 0 else "warning")
+                    elif is_partial:
+                        # Partial close without explicit BE
+                        closed, be_count = self.mt5_executor.partial_close_positions(
+                            channel_username=channel_username, symbol=close_sym
+                        )
+                        action = f"Partial close: {closed} closed, kept lowest entry"
+                        self.log_message.emit(action, "success" if closed > 0 else "warning")
+                    elif is_be and not is_close:
+                        count = self.mt5_executor.move_sl_to_break_even(
+                            channel_username=channel_username, symbol=close_sym
+                        )
+                        action = f"Break-even applied to {count} positions"
+                        self.log_message.emit(action, "success" if count > 0 else "warning")
+                    elif is_close or is_tp_hit:
+                        closed = self.mt5_executor.close_positions(
+                            channel_username=channel_username,
+                            direction=close_dir,
+                            symbol=close_sym,
+                        )
+                        cancelled = self.mt5_executor.cancel_pending_orders(
+                            channel_username=channel_username,
+                            symbol=close_sym,
+                        )
+                        action = f"Closed {closed} positions, cancelled {cancelled} pending orders"
+                        self.log_message.emit(action, "success" if closed + cancelled > 0 else "warning")
+                else:
+                    action_type = "Partial close" if is_partial else ("Break-even" if is_be else "Close")
+                    self.log_message.emit(
+                        f"{action_type} signal from @{channel_username} (MT5 not enabled)",
+                        "warning"
+                    )
+
+                self.logger.info(
+                    f"  Management signal from @{channel_username}: "
+                    f"close={is_close}, BE={is_be}, TP_hit={is_tp_hit}, partial={is_partial}"
+                )
+                return  # Don't process as a trade signal
 
             # Check if this is a signal
             if self.signal_extractor.is_signal(message_text):
@@ -219,7 +296,7 @@ class BackgroundWorker(QThread):
                     self.log_message.emit(f"Processing potential signal from @{channel_username}", "info")
 
                 try:
-                    # Extract signal (may raise ValueError for low confidence)
+                    # Extract signal
                     signal = self.signal_extractor.extract_signal(
                         message_text,
                         message_id,
@@ -230,12 +307,101 @@ class BackgroundWorker(QThread):
                     # Mark as processed with content hash
                     self._processed_messages[message_id] = content_hash
 
-                    # Valid signal - save it
+                    # Always save to CSV for record-keeping
                     self.csv_writer.write_signal(signal)
 
-                    # Add to signal store for MT5 EA
-                    if self.signal_store.add_signal(signal):
-                        self.logger.info(f"  Signal added to MT5 store (pending)")
+                    # Low-confidence signals: show in table but skip execution and HTTP serving
+                    is_low_conf = signal.execution_status == "LOW_CONF"
+
+                    # Only add to signal store (HTTP server) if confidence is sufficient
+                    if not is_low_conf:
+                        if self.signal_store.add_signal(signal):
+                            self.logger.info(f"  Signal added to MT5 store (pending)")
+
+                    # Skip execution for low-confidence signals
+                    if is_low_conf:
+                        self.logger.info(
+                            f"  Low confidence ({signal.confidence_score:.2f}), showing but not executing"
+                        )
+                        self.log_message.emit(
+                            f"Low confidence signal: {signal.symbol} {signal.direction} "
+                            f"({signal.confidence_score:.2f})",
+                            "warning"
+                        )
+
+                    else:
+                        # Check signal staleness - skip if too old (network delay, sleep, etc.)
+                        max_age_minutes = self.config.get('trading.max_signal_age_minutes', 10)
+                        sig_ts = signal.timestamp if signal.timestamp.tzinfo else signal.timestamp.replace(tzinfo=timezone.utc)
+                        signal_age = datetime.now(timezone.utc) - sig_ts
+                        is_stale = signal_age > timedelta(minutes=max_age_minutes)
+
+                        if is_stale:
+                            signal.execution_status = "SKIPPED"
+                            age_str = f"{signal_age.total_seconds() / 60:.1f}min"
+                            self.logger.info(
+                                f"  Signal too old ({age_str} > {max_age_minutes}min), skipping execution"
+                            )
+                            self.log_message.emit(
+                                f"Stale signal skipped ({age_str} old): {signal.symbol} {signal.direction}",
+                                "warning"
+                            )
+
+                        # Determine execution status
+                        elif self.mt5_executor and self.mt5_executor.enabled:
+                            # Fill missing SL/TP using R:R before validation
+                            self.mt5_executor._fill_missing_sl_tp(signal)
+                            # Pre-check if signal is tradeable before attempting execution
+                            reject_reason = self.mt5_executor._validate_for_trading(signal)
+                            if reject_reason:
+                                signal.execution_status = "SKIPPED"
+                                self.logger.info(f"  Signal not tradeable: {reject_reason}")
+                                self.log_message.emit(
+                                    f"Signal skipped: {signal.symbol} {signal.direction} ({reject_reason})",
+                                    "warning"
+                                )
+                            else:
+                                # Signal is valid for trading - attempt execution
+                                positions = self.mt5_executor.execute_signal(signal)
+                                if positions:
+                                    signal.execution_status = "EXECUTED"
+                                    self.logger.info(
+                                        f"  Opened {len(positions)} MT5 positions for "
+                                        f"{signal.symbol} {signal.direction}"
+                                    )
+                                    self.log_message.emit(
+                                        f"Opened {len(positions)} positions: {signal.symbol} {signal.direction}",
+                                        "success"
+                                    )
+                                else:
+                                    signal.execution_status = "FAILED"
+                                    self.logger.warning(
+                                        f"  MT5 execution failed for {signal.symbol} {signal.direction}"
+                                    )
+                                    self.log_message.emit(
+                                        f"Trade failed: {signal.symbol} {signal.direction}",
+                                        "error"
+                                    )
+                        else:
+                            # MT5 executor not enabled — still check if signal would be tradeable
+                            if self.mt5_executor:
+                                self.mt5_executor._fill_missing_sl_tp(signal)
+                                reject_reason = self.mt5_executor._validate_for_trading(signal)
+                                if reject_reason:
+                                    signal.execution_status = "SKIPPED"
+                                    self.logger.info(f"  Signal not tradeable: {reject_reason}")
+                                else:
+                                    signal.execution_status = "PENDING"
+                            else:
+                                signal.execution_status = "PENDING"
+
+                    # Update CSV and store with execution status
+                    self.csv_writer.write_signal(signal)
+                    if not is_low_conf:
+                        self.signal_store.add_signal(signal)
+
+                    # Notify GUI of status change
+                    self.signal_status_updated.emit(signal.message_id, signal.execution_status)
 
                     self.stats['extracted'] += 1
 
@@ -254,7 +420,8 @@ class BackgroundWorker(QThread):
                         'take_profit_2': signal.take_profits[1] if len(signal.take_profits) > 1 else None,
                         'take_profit_3': signal.take_profits[2] if len(signal.take_profits) > 2 else None,
                         'take_profit_4': signal.take_profits[3] if len(signal.take_profits) > 3 else None,
-                        'confidence_score': signal.confidence_score
+                        'confidence_score': signal.confidence_score,
+                        'execution_status': signal.execution_status
                     }
 
                     self.signal_extracted.emit(signal_data)

@@ -9,7 +9,7 @@
 ; Command line: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 
 #define MyAppName "Telegram Signal Extractor"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "TelegramSignals"
 #define MyAppURL "https://github.com/yourusername/TelegramSignals"
 #define MyAppExeName "TelegramSignals.exe"

@@ -113,6 +113,14 @@ class ConfigManager:
                     'EURUSD': 'EURUSD',
                     'GBP/USD': 'GBPUSD',
                     'GBPUSD': 'GBPUSD',
+                    'USD/JPY': 'USDJPY',
+                    'USDJPY': 'USDJPY',
+                    'GBP/JPY': 'GBPJPY',
+                    'GBPJPY': 'GBPJPY',
+                    'US30': 'US30',
+                    'DJ30': 'US30',
+                    'DOW': 'US30',
+                    'Dow Jones': 'US30',
                     'BTC/USD': 'BTCUSD',
                     'BTCUSD': 'BTCUSD'
                 }

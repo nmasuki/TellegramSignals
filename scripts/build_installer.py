@@ -8,12 +8,68 @@ Run this after build_exe.py has created the application.
 import subprocess
 import sys
 import shutil
+import re
 from pathlib import Path
 
 IS_WINDOWS = sys.platform == 'win32'
 IS_MACOS = sys.platform == 'darwin'
 
-VERSION = "1.0.0"
+SOURCE_VERSION = "1.0.3"
+VERSION_FILE = Path(__file__).parent.parent / "tmp" / "version.txt"
+
+
+def _parse_version(v: str) -> tuple:
+    """Parse 'major.minor.patch' into (major, minor, patch) ints."""
+    parts = v.strip().split(".")
+    return tuple(int(p) for p in parts)
+
+
+def _format_version(t: tuple) -> str:
+    return ".".join(str(p) for p in t)
+
+
+def _increment_patch(v: tuple) -> tuple:
+    return (v[0], v[1], v[2] + 1)
+
+
+def get_next_version() -> str:
+    """
+    Compare source version vs tmp file, pick higher, increment patch, and save.
+    """
+    source = _parse_version(SOURCE_VERSION)
+
+    saved = (0, 0, 0)
+    if VERSION_FILE.exists():
+        try:
+            saved = _parse_version(VERSION_FILE.read_text().strip())
+        except (ValueError, IndexError):
+            pass
+
+    highest = max(source, saved)
+    next_ver = _increment_patch(highest)
+
+    # Save for next run
+    VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    VERSION_FILE.write_text(_format_version(next_ver))
+
+    return _format_version(next_ver)
+
+
+def update_iss_version(project_root: Path, version: str):
+    """Update version in installer.iss file."""
+    iss_file = project_root / "scripts" / "installer.iss"
+    if iss_file.exists():
+        content = iss_file.read_text()
+        content = re.sub(
+            r'#define MyAppVersion ".*?"',
+            f'#define MyAppVersion "{version}"',
+            content,
+        )
+        iss_file.write_text(content)
+
+
+VERSION = get_next_version()
+print(f"Building version: {VERSION}")
 
 
 def find_inno_setup() -> Path | None:
@@ -88,6 +144,9 @@ def build_windows_installer(project_root: Path) -> int:
             "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n"
             "SOFTWARE.\n"
         )
+
+    # Update version in .iss file
+    update_iss_version(project_root, VERSION)
 
     # Run Inno Setup compiler
     iss_file = project_root / "scripts" / "installer.iss"

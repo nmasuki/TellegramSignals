@@ -22,29 +22,33 @@ telegram:
     confidence: 0.8
     description: Gary Gold Legacy - related channel tested at ~10% win rate
   - username: goldfx_signls0
-    enabled: false
-    confidence: 0.3
+    enabled: true
+    confidence: 0.49999999999999983
     description: GOLD FX SIGNALS - flagged as potential scam
   - username: VasilyTrading
-    enabled: false
-    confidence: 0.7
+    enabled: true
+    confidence: 0.49999999999999983
     description: Vasily Trading - free signals channel
   - username: GoldSignalsDaily
-    enabled: false
-    confidence: 0.5
+    enabled: true
+    confidence: 0.49999999999999983
     description: Gold Signals Daily - 126k+ subs, unverified win rate
   - username: UnitedSignalsF
-    enabled: false
-    confidence: 0.55
+    enabled: true
+    confidence: 0.49999999999999983
     description: United Signals - 5+ years, mixed reviews (2.7/5 Trustpilot)
   - username: OnlyGoldSnipers
-    enabled: false
-    confidence: 0.35
+    enabled: true
+    confidence: 0.49999999999999983
     description: OnlyGoldSnipers - 21% success rate in backtest, red flags
   - username: TRADE_WITH_CHARLES13
     enabled: true
-    confidence: 0.75
+    confidence: 0.39999999999999997
     description: TRADE_WITH_CHARLES13 - unknown, no reviews found
+  - username: btcusdsignalofficials1
+    enabled: true
+    confidence: 0.75
+    description: btcusdsignalofficials1 signals
 extraction:
   min_confidence: 0.75
   confidence_weights:
@@ -63,22 +67,40 @@ extraction:
     EURUSD: EURUSD
     GBP/USD: GBPUSD
     GBPUSD: GBPUSD
+    USD/JPY: USDJPY
+    USDJPY: USDJPY
+    GBP/JPY: GBPJPY
+    GBPJPY: GBPJPY
+    US30: US30
+    DJ30: US30
+    DOW: US30
+    Dow Jones: US30
     BTC/USD: BTCUSD
     BTCUSD: BTCUSD
 trading:
-  enabled: false
+  enabled: true
   lot_size: 0.01
-  positions_per_signal: 6
+  min_lot_size: 0.01
+  max_lot_size: 0.05
+  positions_per_signal: 5
   max_positions: 30
-  min_confidence: 0.80
+  min_confidence: 0.8
   slippage: 20
-  magic_number: 472600
+  magic_number: 272600
   mt5_path: null
+  risk_reward_ratio: 2.0
+  default_tp_pips: 30
+  entry_range_pips: 30
+  pending_expiry_minutes: 30
+  max_signal_age_minutes: 10
   allowed_symbols:
   - XAUUSD
   - XAGUSD
   - EURUSD
   - GBPUSD
+  - USDJPY
+  - GBPJPY
+  - US30
 output:
   csv:
     file_path: '%APPDATA%\MetaQuotes\Terminal\Common\Files\TelegramSignals\signals.csv'
@@ -134,6 +156,8 @@ validation:
     - GBPUSD
     - BTCUSD
     - USDJPY
+    - GBPJPY
+    - US30
     - AUDUSD
     - USDCAD
     - NZDUSD

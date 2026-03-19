@@ -99,7 +99,8 @@ class AddChannelDialog(QDialog):
 
         # Enable button only if username is valid
         is_valid = len(username) >= 3 and username.replace('_', '').isalnum()
-        self.add_btn.setEnabled(is_valid)
+        if hasattr(self, 'add_btn'):
+            self.add_btn.setEnabled(is_valid)
 
     def accept_channel(self):
         """Accept and store channel data"""

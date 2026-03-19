@@ -21,7 +21,7 @@ class SignalValidator:
         """
         self.allowed_symbols = allowed_symbols or [
             'XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'BTCUSD',
-            'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF'
+            'USDJPY', 'GBPJPY', 'US30', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF'
         ]
 
     def validate_signal(self, signal: Signal) -> bool:
