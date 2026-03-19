@@ -1,11 +1,13 @@
 """Application controller - coordinates GUI and backend"""
 import logging
+from datetime import datetime, timezone
 from PySide6.QtCore import QObject, QTimer
 
 from src.gui.worker import BackgroundWorker
 from src.gui.settings_dialog import SettingsDialog
 from src.gui.add_channel_dialog import AddChannelDialog
 from src.gui.error_log_dialog import ErrorLogDialog
+from src.storage.csv_writer import CSVWriter
 
 
 class AppController(QObject):
@@ -54,6 +56,7 @@ class AppController(QObject):
         """Initialize UI with current config"""
         # Add configured channels to channel widget
         channels = self.config.get_enabled_channels()
+        channels.sort(key=lambda ch: ch.get('confidence', 1.0), reverse=True)
         for channel in channels:
             username = channel.get('username')
             enabled = channel.get('enabled', True)
@@ -65,8 +68,75 @@ class AppController(QObject):
         csv_path = self.config.get_csv_path()
         self.main_window.csv_path_label.setText(f"CSV: {csv_path}")
 
+        # Load today's signals from CSV into the signal table
+        self._load_todays_signals()
+
         # Add initial log messages
         self.main_window.add_activity_log("Application initialized", "info")
+
+    def _load_todays_signals(self):
+        """Load today's signals from CSV into the signal table"""
+        try:
+            csv_path = self.config.get_csv_path()
+            if not csv_path.exists():
+                return
+
+            csv_writer = CSVWriter(csv_path)
+            all_signals = csv_writer.read_signals()
+
+            if not all_signals:
+                return
+
+            # Filter to today's signals only
+            today = datetime.now().date()
+            todays_signals = []
+            for sig in all_signals:
+                ts = sig.get('timestamp') or sig.get('created_at')
+                if ts:
+                    try:
+                        if isinstance(ts, str):
+                            # Handle both tz-aware and naive timestamps
+                            ts_dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                        else:
+                            ts_dt = ts
+                        # Compare dates (use local date)
+                        sig_date = ts_dt.date() if ts_dt.tzinfo is None else ts_dt.astimezone().date()
+                        if sig_date == today:
+                            todays_signals.append(sig)
+                    except (ValueError, TypeError):
+                        continue
+
+            # Add to signal table (oldest first so newest ends up on top)
+            for sig in todays_signals:
+                # Map CSV field names to signal_data format expected by the table
+                signal_data = {
+                    'message_id': sig.get('message_id'),
+                    'timestamp': sig.get('timestamp'),
+                    'channel_username': sig.get('channel_username', ''),
+                    'symbol': sig.get('symbol', ''),
+                    'direction': sig.get('direction', ''),
+                    'entry_price': sig.get('entry_price'),
+                    'entry_price_min': sig.get('entry_price_min'),
+                    'entry_price_max': sig.get('entry_price_max'),
+                    'stop_loss': sig.get('stop_loss'),
+                    'take_profit_1': sig.get('take_profit_1'),
+                    'take_profit_2': sig.get('take_profit_2'),
+                    'take_profit_3': sig.get('take_profit_3'),
+                    'take_profit_4': sig.get('take_profit_4'),
+                    'confidence_score': sig.get('confidence_score', 0),
+                    'execution_status': sig.get('execution_status', 'PENDING'),
+                }
+                self.main_window.add_signal_to_table(signal_data)
+
+            if todays_signals:
+                count = len(todays_signals)
+                self.main_window.add_activity_log(
+                    f"Loaded {count} signal(s) from today's session", "info"
+                )
+                self.logger.info(f"Loaded {count} today's signals from CSV")
+
+        except Exception as e:
+            self.logger.error(f"Failed to load today's signals: {e}", exc_info=True)
 
     def start_monitoring(self):
         """Start background monitoring"""
@@ -83,6 +153,7 @@ class AppController(QObject):
         # Connect worker signals
         self.worker.status_changed.connect(self.on_status_changed)
         self.worker.signal_extracted.connect(self.on_signal_extracted)
+        self.worker.signal_status_updated.connect(self.on_signal_status_updated)
         self.worker.error_occurred.connect(self.on_error_occurred)
         self.worker.message_received.connect(self.on_message_received)
         self.worker.stats_updated.connect(self.on_stats_updated)
@@ -158,6 +229,10 @@ class AppController(QObject):
             notification_text,
             3000
         )
+
+    def on_signal_status_updated(self, message_id: int, status: str):
+        """Handle execution status update from worker"""
+        self.main_window.signal_table.update_signal_status(message_id, status)
 
     def on_error_occurred(self, error_message: str, level: str):
         """Handle error from worker"""

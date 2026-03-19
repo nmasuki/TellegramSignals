@@ -225,6 +225,12 @@ class SignalExtractor:
             else:
                 signal.extraction_notes = f"Validation warning: {e}"
 
+        # Very low confidence: not a real signal, discard entirely
+        if confidence < 0.1:
+            raise ValueError(
+                f"Score too low ({confidence:.2f}), not a trading signal"
+            )
+
         # Mark low-confidence signals instead of raising - they'll be shown but not executed
         if confidence < self.min_confidence:
             signal.execution_status = "LOW_CONF"
@@ -410,13 +416,26 @@ class SignalExtractor:
             else:
                 score += tp_score * 0.5
 
+        # Penalties for missing critical fields
+        has_entry = (
+            extracted_fields.get('entry_price')
+            or (extracted_fields.get('entry_price_min') and extracted_fields.get('entry_price_max'))
+            or extracted_fields.get('is_market_order')
+        )
+        if not has_entry:
+            score -= 0.25
+        if not extracted_fields.get('stop_loss'):
+            score -= 0.25
+        if not take_profits:
+            score -= 0.25
+
         # Channel confidence (weighted component based on channel reliability)
         channel_weight = self.confidence_weights.get('channel_confidence', 0.0)
         if channel_weight > 0 and channel_username:
             channel_conf = self.channel_confidence.get(channel_username, 1.0)
             score += channel_weight * channel_conf
 
-        return round(score, 2)
+        return round(max(score, 0.0), 2)
 
     def _validate_and_correct_setup(
         self,

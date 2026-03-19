@@ -438,11 +438,25 @@ class BackgroundWorker(QThread):
                         f"Skipped message from @{channel_username}: {e}",
                         "info"
                     )
+                    # Log to error file for review
+                    if self.error_logger:
+                        from src.extraction.models import ExtractionError
+                        self.error_logger.log_error(ExtractionError(
+                            message_id=message_id,
+                            channel_username=channel_username,
+                            timestamp=timestamp,
+                            raw_message=message_text,
+                            error_reason=str(e),
+                        ))
 
         except Exception as e:
             self.stats['errors'] += 1
             self.logger.error(f"Error processing message: {e}", exc_info=True)
             self.error_occurred.emit(f"Error processing message: {str(e)}", "error")
+            if self.error_logger:
+                self.error_logger.log_exception(e, {
+                    'channel_username': channel_username,
+                })
 
     def emit_stats(self):
         """Emit current statistics"""
